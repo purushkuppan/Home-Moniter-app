@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HomeHub Events</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 2rem; }
+  table { border-collapse: collapse; width: 100%; max-width: 800px; }
+  th, td { border: 1px solid #ccc; padding: .4rem .7rem; text-align: left; }
+  th { background: #f0f0f0; }
+</style>
+</head>
+<body>
+<h1>HomeHub Events</h1>
+<p id="status">Loading…</p>
+<table>
+  <thead><tr><th>ID</th><th>Device</th><th>Type</th><th>Value</th><th>Time</th></tr></thead>
+  <tbody id="rows"></tbody>
+</table>
+<script>
+async function load() {
+  try {
+    const res = await fetch('/api/events');
+    const events = await res.json();
+    const tbody = document.getElementById('rows');
+    tbody.replaceChildren(...events.map(e => {
+      const tr = document.createElement('tr');
+      [e.id, e.device, e.type, e.value ?? '', new Date(e.time).toLocaleString()].forEach(v => {
+        const td = document.createElement('td');
+        td.textContent = v;
+        tr.appendChild(td);
+      });
+      return tr;
+    }));
+    document.getElementById('status').textContent = 'Updated ' + new Date().toLocaleTimeString();
+  } catch (err) {
+    document.getElementById('status').textContent = 'Error: ' + err;
+  }
+}
+load();
+setInterval(load, 3000);
+</script>
+</body>
+</html>
