@@ -3,43 +3,444 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>HomeHub Events</title>
+<title>HomeHub</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%234f46e5' d='M12 3 2 11h3v9h5v-6h4v6h5v-9h3z'/%3E%3C/svg%3E">
 <style>
-  body { font-family: system-ui, sans-serif; margin: 2rem; }
-  table { border-collapse: collapse; width: 100%; max-width: 800px; }
-  th, td { border: 1px solid #ccc; padding: .4rem .7rem; text-align: left; }
-  th { background: #f0f0f0; }
+  :root {
+    --bg: #f4f6fb;
+    --surface: #ffffff;
+    --surface-2: #f8f9fc;
+    --border: #e4e7ef;
+    --text: #1d2330;
+    --muted: #6b7385;
+    --accent: #4f46e5;
+    --accent-soft: #eef0ff;
+    --ok: #12805c;      --ok-soft: #e3f6ee;
+    --warn: #a15c00;    --warn-soft: #fff1dc;
+    --active: #1d5fd1;  --active-soft: #e4eeff;
+    --idle: #59627a;    --idle-soft: #eef0f5;
+    --bad: #c0362c;     --bad-soft: #fde8e6;
+    --new: #fff9db;
+    --shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 4px 16px rgba(16, 24, 40, .06);
+    --radius: 14px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f131a;
+      --surface: #171c25;
+      --surface-2: #1c222d;
+      --border: #2a3140;
+      --text: #e8ebf2;
+      --muted: #9aa3b5;
+      --accent: #8b85ff;
+      --accent-soft: #24234a;
+      --ok: #4cd6a0;      --ok-soft: #133528;
+      --warn: #ffb44d;    --warn-soft: #3b2a10;
+      --active: #74a7ff;  --active-soft: #172a4a;
+      --idle: #aab2c5;    --idle-soft: #252c39;
+      --bad: #ff8a80;     --bad-soft: #3d1a17;
+      --new: #2f2a12;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 4px 16px rgba(0, 0, 0, .25);
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.45 "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 20px 48px; }
+  svg.icon { width: 20px; height: 20px; flex: none; }
+
+  /* Header */
+  header {
+    position: sticky; top: 0; z-index: 5;
+    background: color-mix(in srgb, var(--bg) 85%, transparent);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 24px;
+  }
+  header .wrap { display: flex; align-items: center; gap: 12px; padding-top: 14px; padding-bottom: 14px; }
+  .logo {
+    display: grid; place-items: center;
+    width: 38px; height: 38px; border-radius: 11px;
+    background: var(--accent); color: #fff;
+  }
+  .brand h1 { margin: 0; font-size: 18px; letter-spacing: -.01em; }
+  .brand p { margin: 0; color: var(--muted); font-size: 13px; }
+  .live {
+    margin-left: auto;
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 12px; border-radius: 999px;
+    background: var(--surface); border: 1px solid var(--border);
+    font-size: 13px; color: var(--muted); white-space: nowrap;
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); position: relative; }
+  .dot::after {
+    content: ""; position: absolute; inset: -4px; border-radius: 50%;
+    border: 2px solid var(--ok); opacity: 0; animation: pulse 2s infinite;
+  }
+  .live.error .dot { background: var(--bad); }
+  .live.error .dot::after { display: none; }
+  .live.paused .dot { background: var(--idle); }
+  .live.paused .dot::after { display: none; }
+  @keyframes pulse { 0% { transform: scale(.6); opacity: .8; } 100% { transform: scale(1.6); opacity: 0; } }
+  .btn {
+    border: 1px solid var(--border); background: var(--surface); color: var(--text);
+    border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* Section titles */
+  h2 {
+    font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--muted); margin: 0 0 12px;
+  }
+
+  /* Device cards */
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; margin-bottom: 32px; }
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    box-shadow: var(--shadow); padding: 16px;
+  }
+  .card-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .card-icon {
+    display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px;
+    background: var(--accent-soft); color: var(--accent);
+  }
+  .card-title { font-weight: 600; }
+  .card-sub { font-size: 12px; color: var(--muted); }
+  .reading { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; border-top: 1px dashed var(--border); }
+  .reading:first-of-type { border-top: 0; }
+  .reading .label { color: var(--muted); font-size: 13px; }
+  .empty-card { color: var(--muted); padding: 24px; text-align: center; grid-column: 1 / -1; }
+
+  /* Badges */
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 3px 10px; border-radius: 999px; font-size: 13px; font-weight: 600; white-space: nowrap;
+    background: var(--idle-soft); color: var(--idle);
+  }
+  .badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .badge.ok { background: var(--ok-soft); color: var(--ok); }
+  .badge.warn { background: var(--warn-soft); color: var(--warn); }
+  .badge.active { background: var(--active-soft); color: var(--active); }
+  .badge.bad { background: var(--bad-soft); color: var(--bad); }
+  .badge.temp { background: var(--accent-soft); color: var(--accent); }
+  .badge.temp::before { display: none; }
+
+  /* Activity panel */
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+  .search {
+    flex: 1 1 220px; display: flex; align-items: center; gap: 8px;
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 0 10px;
+    color: var(--muted);
+  }
+  .search input { border: 0; outline: 0; background: transparent; color: var(--text); font: inherit; padding: 8px 0; width: 100%; }
+  .search:focus-within { border-color: var(--accent); }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    border: 1px solid var(--border); background: var(--surface); color: var(--muted);
+    border-radius: 999px; padding: 5px 12px; font: inherit; font-size: 13px; cursor: pointer;
+  }
+  .chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  .table-scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  thead th {
+    position: sticky; top: 0;
+    background: var(--surface-2); color: var(--muted);
+    font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em;
+    text-align: left; padding: 10px 16px; border-bottom: 1px solid var(--border); white-space: nowrap;
+  }
+  tbody td { padding: 12px 16px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tbody tr:last-child td { border-bottom: 0; }
+  tbody tr:hover { background: var(--surface-2); }
+  tbody tr.new { animation: flash 2.5s ease-out; }
+  @keyframes flash { from { background: var(--new); } to { background: transparent; } }
+  .device { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+  .device .mini { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; background: var(--accent-soft); color: var(--accent); }
+  .device .part { color: var(--muted); font-weight: 400; }
+  .type { color: var(--muted); }
+  .when { white-space: nowrap; }
+  .when .day { font-weight: 600; }
+  .when .clock { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+  .ago { color: var(--muted); font-size: 13px; white-space: nowrap; }
+  .id { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 13px; }
+  .empty-row td { text-align: center; color: var(--muted); padding: 40px 16px; }
+  .footer { display: flex; justify-content: space-between; padding: 10px 16px; color: var(--muted); font-size: 12px; border-top: 1px solid var(--border); }
+
+  @media (max-width: 640px) {
+    .wrap { padding-left: 16px; padding-right: 16px; }
+    .brand p, .col-id, .col-ago, .col-type, .live .clock-text { display: none; }
+    header .wrap { gap: 10px; }
+    tbody td, thead th { padding-left: 12px; padding-right: 12px; }
+    .when .day { font-size: 13px; }
+  }
 </style>
 </head>
 <body>
-<h1>HomeHub Events</h1>
-<p id="status">Loading�</p>
-<table>
-  <thead><tr><th>ID</th><th>Device</th><th>Type</th><th>Value</th><th>Time</th></tr></thead>
-  <tbody id="rows"></tbody>
-</table>
+
+<header>
+  <div class="wrap">
+    <div class="logo"><svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3 2 11h3v9h5v-6h4v6h5v-9h3z"/></svg></div>
+    <div class="brand">
+      <h1>HomeHub</h1>
+      <p>Home appliance monitor</p>
+    </div>
+    <div class="live" id="live"><span class="dot"></span><span id="status">Connecting…</span></div>
+    <button class="btn" id="pause" type="button">Pause</button>
+  </div>
+</header>
+
+<main class="wrap">
+  <h2>Current status</h2>
+  <section class="cards" id="cards"></section>
+
+  <h2>Recent activity</h2>
+  <section class="panel">
+    <div class="toolbar">
+      <label class="search">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="search" type="search" placeholder="Search device or value…" autocomplete="off">
+      </label>
+      <div class="chips" id="chips"></div>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>When</th>
+            <th>Device</th>
+            <th class="col-type">Event</th>
+            <th>Value</th>
+            <th class="col-ago">Ago</th>
+            <th class="col-id">#</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <div class="footer"><span id="count"></span><span>Refreshes every 3 seconds</span></div>
+  </section>
+</main>
+
 <script>
-async function load() {
-  try {
-    const res = await fetch('/api/events');
-    const events = await res.json();
-    const tbody = document.getElementById('rows');
-    tbody.replaceChildren(...events.map(e => {
-      const tr = document.createElement('tr');
-      [e.id, e.device, e.type, e.value ?? '', new Date(e.time).toLocaleString()].forEach(v => {
-        const td = document.createElement('td');
-        td.textContent = v;
-        tr.appendChild(td);
-      });
-      return tr;
-    }));
-    document.getElementById('status').textContent = 'Updated ' + new Date().toLocaleTimeString();
-  } catch (err) {
-    document.getElementById('status').textContent = 'Error: ' + err;
+const REFRESH_MS = 3000;
+
+const ICONS = {
+  fridge:  '<rect x="6" y="2" width="12" height="20" rx="2"/><path d="M6 10h12M9 5v2M9 13v3"/>',
+  washer:  '<rect x="4" y="2" width="16" height="20" rx="2"/><circle cx="12" cy="13" r="5"/><path d="M8 6h.01M11 6h.01"/>',
+  dryer:   '<rect x="4" y="2" width="16" height="20" rx="2"/><circle cx="12" cy="13" r="5"/><path d="M10 12c1-1 3 1 4 0M8 6h.01"/>',
+  lock:    '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  thermo:  '<path d="M14 14.8V5a2 2 0 0 0-4 0v9.8a4 4 0 1 0 4 0z"/>',
+  device:  '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>'
+};
+
+const dayFormat = new Intl.DateTimeFormat(undefined, { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' });
+const clockFormat = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+const relative = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+
+let events = [];
+let lastSeenId = null;
+let activeType = 'all';
+let paused = false;
+let timer = null;
+
+const $ = id => document.getElementById(id);
+
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function icon(name) {
+  const span = el('span');
+  span.innerHTML = `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`;
+  return span.firstChild;
+}
+
+function iconFor(device, type) {
+  const d = (device || '').toLowerCase();
+  if (/fridge|refrigerator|freezer|cooler/.test(d)) return 'fridge';
+  if (/dryer/.test(d)) return 'dryer';
+  if (/wash/.test(d)) return 'washer';
+  if (/lock|door/.test(d) || type === 'lock') return 'lock';
+  if (/thermostat/.test(d) || type === 'temperature') return 'thermo';
+  return 'device';
+}
+
+/** "machineState" -> "Machine state" */
+function prettyType(type) {
+  const words = (type || '').replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+function badge(type, value) {
+  const v = (value ?? '').toString();
+  const lower = v.toLowerCase();
+  let tone = '';
+  if (type === 'temperature') tone = 'temp';
+  else if (['closed', 'locked', 'done', 'finished'].includes(lower)) tone = 'ok';
+  else if (['open', 'unlocked'].includes(lower)) tone = 'warn';
+  else if (['run', 'running', 'wash', 'rinse', 'spin', 'drying', 'cooling'].includes(lower)) tone = 'active';
+  else if (['error', 'fault', 'alarm'].includes(lower)) tone = 'bad';
+  return el('span', 'badge ' + tone, formatValue(type, v));
+}
+
+function formatValue(type, value) {
+  if (type === 'temperature') return value.replace(/ ?(F|C)$/, '°$1');
+  return value ? value.charAt(0).toUpperCase() + value.slice(1) : '—';
+}
+
+function timeAgo(date) {
+  const secs = Math.round((date - Date.now()) / 1000);
+  const abs = Math.abs(secs);
+  if (abs < 60) return relative.format(secs, 'second');
+  if (abs < 3600) return relative.format(Math.round(secs / 60), 'minute');
+  if (abs < 86400) return relative.format(Math.round(secs / 3600), 'hour');
+  return relative.format(Math.round(secs / 86400), 'day');
+}
+
+/** "Refrigerator/cooler" -> { main: "Refrigerator", part: "cooler" } */
+function splitDevice(device) {
+  const i = (device || '').indexOf('/');
+  return i < 0 ? { main: device, part: '' } : { main: device.slice(0, i), part: device.slice(i + 1) };
+}
+
+function renderCards() {
+  const cards = $('cards');
+  // Newest value per device + type. Events arrive newest first.
+  const devices = new Map();
+  for (const e of events) {
+    const { main, part } = splitDevice(e.device);
+    if (!devices.has(main)) devices.set(main, { name: main, readings: new Map(), updated: new Date(e.time) });
+    const key = (part ? part + ' ' : '') + e.type;
+    const readings = devices.get(main).readings;
+    if (!readings.has(key)) readings.set(key, { label: (part ? prettyType(part) + ' · ' : '') + prettyType(e.type).toLowerCase(), type: e.type, value: e.value });
+  }
+
+  cards.replaceChildren();
+  if (devices.size === 0) {
+    cards.append(el('div', 'card empty-card', 'No devices have reported yet.'));
+    return;
+  }
+  for (const d of [...devices.values()].sort((a, b) => a.name.localeCompare(b.name))) {
+    const card = el('article', 'card');
+    const head = el('div', 'card-head');
+    const ic = el('div', 'card-icon'); ic.append(icon(iconFor(d.name)));
+    const titles = el('div');
+    titles.append(el('div', 'card-title', d.name), el('div', 'card-sub', 'Updated ' + timeAgo(d.updated)));
+    head.append(ic, titles);
+    card.append(head);
+    for (const r of [...d.readings.values()].sort((a, b) => a.label.localeCompare(b.label))) {
+      const row = el('div', 'reading');
+      row.append(el('span', 'label', r.label.charAt(0).toUpperCase() + r.label.slice(1)), badge(r.type, r.value));
+      card.append(row);
+    }
+    cards.append(card);
   }
 }
+
+function renderChips() {
+  const types = ['all', ...new Set(events.map(e => e.type))];
+  if (!types.includes(activeType)) activeType = 'all';
+  const chips = $('chips');
+  chips.replaceChildren(...types.map(t => {
+    const b = el('button', 'chip', t === 'all' ? 'All' : prettyType(t));
+    b.type = 'button';
+    b.setAttribute('aria-pressed', String(t === activeType));
+    b.onclick = () => { activeType = t; renderChips(); renderTable(); };
+    return b;
+  }));
+}
+
+function renderTable(newIds = new Set()) {
+  const q = $('search').value.trim().toLowerCase();
+  const shown = events.filter(e =>
+    (activeType === 'all' || e.type === activeType) &&
+    (!q || `${e.device} ${e.type} ${e.value}`.toLowerCase().includes(q)));
+
+  const rows = $('rows');
+  if (shown.length === 0) {
+    const tr = el('tr', 'empty-row');
+    const td = el('td', '', events.length ? 'No events match your filter.' : 'Waiting for the first event…');
+    td.colSpan = 6;
+    tr.append(td);
+    rows.replaceChildren(tr);
+  } else {
+    rows.replaceChildren(...shown.map(e => {
+      const date = new Date(e.time);
+      const tr = el('tr', newIds.has(e.id) ? 'new' : '');
+
+      const when = el('td', 'when');
+      when.append(el('div', 'day', dayFormat.format(date)), el('div', 'clock', clockFormat.format(date)));
+
+      const device = el('td');
+      const wrap = el('div', 'device');
+      const mini = el('span', 'mini'); mini.append(icon(iconFor(e.device, e.type)));
+      const { main, part } = splitDevice(e.device);
+      const name = el('span', '', main);
+      if (part) name.append(' ', el('span', 'part', '· ' + part));
+      wrap.append(mini, name);
+      device.append(wrap);
+
+      const value = el('td'); value.append(badge(e.type, e.value));
+
+      tr.append(when, device, el('td', 'type col-type', prettyType(e.type)), value,
+                el('td', 'ago col-ago', timeAgo(date)), el('td', 'id col-id', e.id));
+      return tr;
+    }));
+  }
+  $('count').textContent = `Showing ${shown.length} of ${events.length} latest events`;
+}
+
+function setStatus(text, state, clock) {
+  const status = $('status');
+  status.textContent = text;
+  if (clock) status.append(el('span', 'clock-text', ' · ' + clock));
+  $('live').className = 'live' + (state ? ' ' + state : '');
+}
+
+async function load() {
+  try {
+    const res = await fetch('/api/events', { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    events = await res.json();
+
+    const newIds = new Set(lastSeenId === null ? [] : events.filter(e => e.id > lastSeenId).map(e => e.id));
+    if (events.length) lastSeenId = Math.max(lastSeenId ?? 0, ...events.map(e => e.id));
+
+    renderCards();
+    renderChips();
+    renderTable(newIds);
+    if (!paused) setStatus('Live', '', clockFormat.format(new Date()));
+  } catch (err) {
+    setStatus('Offline · retrying', 'error');
+  }
+}
+
+$('search').addEventListener('input', () => renderTable());
+
+$('pause').addEventListener('click', () => {
+  paused = !paused;
+  $('pause').textContent = paused ? 'Resume' : 'Pause';
+  if (paused) {
+    clearInterval(timer);
+    setStatus('Paused', 'paused');
+  } else {
+    load();
+    timer = setInterval(load, REFRESH_MS);
+  }
+});
+
 load();
-setInterval(load, 3000);
+timer = setInterval(load, REFRESH_MS);
 </script>
 </body>
 </html>
