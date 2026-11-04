@@ -56,13 +56,19 @@ milestone "$M6" 2027-05-31 "Multi-home, gateway image, beta homes (only if go)"
 milestone "$M7" ""         "Native app and paid plan (after revenue)"
 
 # ---------- project board ----------
-PROJECT=$(gh project list --owner "$OWNER" --format json --jq '.projects[] | select(.title=="HomeHub") | .number' | head -n1)
-if [[ -z "$PROJECT" ]]; then
-  PROJECT=$(gh project create --owner "$OWNER" --title "HomeHub" --format json --jq '.number')
-  gh project link "$PROJECT" --owner "$OWNER" --repo "$REPO" >/dev/null || true
-  echo "project created: #$PROJECT"
+# Needs the "project" scope (gh auth refresh -s project). Without it, the board step is skipped.
+PROJECT=""
+if LIST=$(gh project list --owner "$OWNER" --format json --jq '.projects[] | select(.title=="HomeHub") | .number' 2>/dev/null); then
+  PROJECT=$(echo "$LIST" | head -n1)
+  if [[ -z "$PROJECT" ]]; then
+    PROJECT=$(gh project create --owner "$OWNER" --title "HomeHub" --format json --jq '.number')
+    gh project link "$PROJECT" --owner "$OWNER" --repo "$REPO" >/dev/null || true
+    echo "project created: #$PROJECT"
+  else
+    echo "project exists: #$PROJECT"
+  fi
 else
-  echo "project exists: #$PROJECT"
+  echo "project board skipped: run 'gh auth refresh -s project' and run this script again"
 fi
 
 # ---------- issues ----------
@@ -82,7 +88,7 @@ issue() {
   else
     echo "issue exists: $title"
   fi
-  gh project item-add "$PROJECT" --owner "$OWNER" --url "$url" >/dev/null 2>&1 || true
+  if [[ -n "$PROJECT" ]]; then gh project item-add "$PROJECT" --owner "$OWNER" --url "$url" >/dev/null 2>&1 || true; fi
 }
 
 # R1
@@ -229,5 +235,5 @@ issue "Before selling: employment agreement, vendor terms, licenses" "business" 
 EOF
 
 echo
-echo "Done. Open the board: gh project view $PROJECT --owner $OWNER --web"
+if [[ -n "$PROJECT" ]]; then echo "Done. Open the board: gh project view $PROJECT --owner $OWNER --web"; else echo "Done (issues and milestones only)."; fi
 echo "Tip: in the project, switch the layout to Board to see To do / In progress / Done columns."
