@@ -1,0 +1,25 @@
+[Unit]
+Description=HomeHub home monitoring service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=homehub
+Group=homehub
+WorkingDirectory=/opt/homehub
+# Secrets (for example SMARTTHINGS_TOKEN=...) live here, readable by root only.
+EnvironmentFile=-/etc/homehub/homehub.env
+ExecStart=/usr/bin/java -Xms64m -Xmx384m -XX:+UseSerialGC -jar /opt/homehub/current/homehub.jar --spring.profiles.active=prod
+SuccessExitStatus=143
+Restart=on-failure
+RestartSec=10
+
+# Hardening: the service can only write to its data folder.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/homehub/data
+
+[Install]
+WantedBy=multi-user.target
