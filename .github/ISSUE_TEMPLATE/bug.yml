@@ -1,0 +1,19 @@
+name: Bug
+description: Something is not working
+labels: [bug]
+body:
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should have happened
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to reproduce, and logs
+      description: Remove any tokens or secrets before pasting logs.

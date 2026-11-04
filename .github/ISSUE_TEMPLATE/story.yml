@@ -1,0 +1,24 @@
+name: Story or task
+description: A piece of work for a release
+labels: []
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What
+      description: What should be built or changed?
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why
+      description: What problem does it solve for the household?
+  - type: textarea
+    id: done
+    attributes:
+      label: Done when
+      description: Checks that prove it works (tests, behavior at home)
+      placeholder: "- [ ] ..."
+    validations:
+      required: true
