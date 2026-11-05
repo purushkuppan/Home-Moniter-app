@@ -4,7 +4,7 @@
 # Safe to run again. It does not remove existing firewall rules.
 set -euo pipefail
 
-LAN=192.168.5.0/24
+LAN=192.168.4.0/22   # whole home network: 192.168.4.0 - 192.168.7.255 (PC, phones and hub)
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
 # Service user (already created on our hub; created here if missing)
