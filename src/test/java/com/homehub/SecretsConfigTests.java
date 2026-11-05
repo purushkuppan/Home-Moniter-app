@@ -31,13 +31,11 @@ class SecretsConfigTests {
     void readsSecretsFromHomeFolderFile(@TempDir Path home) throws Exception {
         Path dir = Files.createDirectories(home.resolve(".homehub"));
         Files.writeString(dir.resolve("secrets.properties"), """
-                smartthings.token=st-from-file
                 homeassistant.url=http://ha.test:8123
                 homeassistant.token=ha-from-file
                 """);
 
         try (var ctx = start(home)) {
-            assertThat(ctx.getEnvironment().getProperty("smartthings.token")).isEqualTo("st-from-file");
             HomeAssistantProperties ha = ctx.getBean(HomeAssistantProperties.class);
             assertThat(ha.url()).isEqualTo("http://ha.test:8123");
             assertThat(ha.token()).isEqualTo("ha-from-file");
@@ -49,24 +47,25 @@ class SecretsConfigTests {
     @Test
     void readsSecretsFromCredentialsDirectory(@TempDir Path home) throws Exception {
         Path creds = Files.createDirectories(home.resolve("creds"));
-        Files.writeString(creds.resolve("smartthings.token"), "st-from-credential");
+        Files.writeString(creds.resolve("homeassistant.url"), "http://ha-from-credential:8123");
         Files.writeString(creds.resolve("homeassistant.token"), "ha-from-credential");
 
         try (var ctx = start(home, "--CREDENTIALS_DIRECTORY=" + creds.toString().replace('\\', '/'))) {
-            assertThat(ctx.getEnvironment().getProperty("smartthings.token")).isEqualTo("st-from-credential");
-            assertThat(ctx.getBean(HomeAssistantProperties.class).token()).isEqualTo("ha-from-credential");
+            HomeAssistantProperties ha = ctx.getBean(HomeAssistantProperties.class);
+            assertThat(ha.url()).isEqualTo("http://ha-from-credential:8123");
+            assertThat(ha.token()).isEqualTo("ha-from-credential");
         }
     }
 
     @Test
     void credentialsDirectoryOverridesHomeFolderFile(@TempDir Path home) throws Exception {
         Path dir = Files.createDirectories(home.resolve(".homehub"));
-        Files.writeString(dir.resolve("secrets.properties"), "smartthings.token=st-from-file\n");
+        Files.writeString(dir.resolve("secrets.properties"), "homeassistant.token=ha-from-file\n");
         Path creds = Files.createDirectories(home.resolve("creds"));
-        Files.writeString(creds.resolve("smartthings.token"), "st-from-credential");
+        Files.writeString(creds.resolve("homeassistant.token"), "ha-from-credential");
 
         try (var ctx = start(home, "--CREDENTIALS_DIRECTORY=" + creds.toString().replace('\\', '/'))) {
-            assertThat(ctx.getEnvironment().getProperty("smartthings.token")).isEqualTo("st-from-credential");
+            assertThat(ctx.getBean(HomeAssistantProperties.class).token()).isEqualTo("ha-from-credential");
         }
     }
 

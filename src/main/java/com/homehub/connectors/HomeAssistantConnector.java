@@ -1,5 +1,9 @@
 package com.homehub.connectors;
 
+import static com.homehub.connectors.JsonValues.asMap;
+import static com.homehub.connectors.JsonValues.firstNonBlank;
+import static com.homehub.connectors.JsonValues.text;
+
 import com.homehub.events.Event;
 import com.homehub.events.EventRepository;
 import com.homehub.homeassistant.HomeAssistantProperties;
@@ -426,19 +430,5 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
 
     private static Pattern globToRegex(String glob) {
         return Pattern.compile(Arrays.stream(glob.split("\\*", -1)).map(Pattern::quote).collect(Collectors.joining(".*")));
-    }
-
-    @SuppressWarnings("unchecked")
-    private static Map<String, Object> asMap(Object o) {
-        return o instanceof Map<?, ?> m ? (Map<String, Object>) m : Map.of();
-    }
-
-    private static String text(Object o) {
-        return o == null ? "" : o.toString();
-    }
-
-    private static String firstNonBlank(String... values) {
-        for (String v : values) if (v != null && !v.isBlank()) return v;
-        return "";
     }
 }

@@ -7,8 +7,12 @@ Wants=network-online.target
 User=homehub
 Group=homehub
 WorkingDirectory=/opt/homehub
-# Secrets (for example SMARTTHINGS_TOKEN=...) live here, readable by root only.
+# Optional extra settings as environment variables (NAME=value), readable by root only.
 EnvironmentFile=-/etc/homehub/homehub.env
+# Secrets as systemd credentials: one root-only file per Spring property. systemd hands them to the
+# service in $CREDENTIALS_DIRECTORY, which the app reads through its configtree import.
+# The file must exist (setup-hub.sh creates it empty); an empty token leaves the connector idle.
+LoadCredential=homeassistant.token:/etc/homehub/credentials/homeassistant.token
 ExecStart=/usr/bin/java -Xms64m -Xmx384m -XX:+UseSerialGC -jar /opt/homehub/current/homehub.jar --spring.profiles.active=prod
 SuccessExitStatus=143
 Restart=on-failure

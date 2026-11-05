@@ -10,6 +10,7 @@ import java.time.Duration;
 import java.util.Iterator;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BooleanSupplier;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -63,7 +64,7 @@ class EventStreamTests {
         response.body().close();
     }
 
-    private static void waitUntil(java.util.function.BooleanSupplier condition) throws InterruptedException {
+    private static void waitUntil(BooleanSupplier condition) throws InterruptedException {
         long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
         while (!condition.getAsBoolean() && System.nanoTime() < deadline) Thread.sleep(20);
         assertThat(condition.getAsBoolean()).as("condition within 5s").isTrue();
