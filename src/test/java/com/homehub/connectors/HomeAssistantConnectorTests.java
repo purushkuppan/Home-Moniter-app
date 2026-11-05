@@ -2,6 +2,11 @@ package com.homehub.connectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.groups.Tuple.tuple;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
@@ -10,9 +15,12 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 
 import com.homehub.events.Event;
 import com.homehub.homeassistant.HomeAssistantProperties;
+import java.net.http.WebSocket;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -99,14 +107,14 @@ class HomeAssistantConnectorTests {
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         server.expect(ExpectedCount.once(), requestTo(URL + "/api/template"))
                 .andRespond(withSuccess("binary_sensor.kitchen_refrigerator_fridge_door|Refrigerator\n", MediaType.TEXT_PLAIN));
-        List<Event> saved = new java.util.ArrayList<>();
+        List<Event> saved = new ArrayList<>();
         var connector = new HomeAssistantConnector(builder, PROPS, HomeAssistantConnector.DEFAULT_INCLUDE, saved::add);
-        java.net.http.WebSocket ws = org.mockito.Mockito.mock(java.net.http.WebSocket.class);
+        WebSocket ws = mock(WebSocket.class);
 
         connector.handleMessage(ws, "{\"type\":\"auth_required\",\"ha_version\":\"2026.11.0\"}");
         connector.handleMessage(ws, "{\"type\":\"auth_ok\"}");
-        var sent = org.mockito.ArgumentCaptor.forClass(CharSequence.class);
-        org.mockito.Mockito.verify(ws, org.mockito.Mockito.times(2)).sendText(sent.capture(), org.mockito.ArgumentMatchers.eq(true));
+        var sent = ArgumentCaptor.forClass(CharSequence.class);
+        verify(ws, times(2)).sendText(sent.capture(), eq(true));
         assertThat(sent.getAllValues().get(0).toString()).contains("\"type\":\"auth\"").contains("\"access_token\":\"secret\"");
         assertThat(sent.getAllValues().get(1).toString()).contains("subscribe_events").contains("state_changed");
 
@@ -125,16 +133,16 @@ class HomeAssistantConnectorTests {
 
     @Test
     void liveIgnoresNonJsonAndUnknownMessages() {
-        List<Event> saved = new java.util.ArrayList<>();
+        List<Event> saved = new ArrayList<>();
         var connector = new HomeAssistantConnector(RestClient.builder(), PROPS, HomeAssistantConnector.DEFAULT_INCLUDE, saved::add);
-        java.net.http.WebSocket ws = org.mockito.Mockito.mock(java.net.http.WebSocket.class);
+        WebSocket ws = mock(WebSocket.class);
 
         connector.handleMessage(ws, "not json");
         connector.handleMessage(ws, "{\"type\":\"pong\",\"id\":5}");
         connector.handleMessage(ws, "{\"id\":1,\"type\":\"result\",\"success\":true,\"result\":null}");
 
         assertThat(saved).isEmpty();
-        org.mockito.Mockito.verifyNoInteractions(ws);
+        verifyNoInteractions(ws);
     }
 
     @Test

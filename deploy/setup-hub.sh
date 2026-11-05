@@ -15,6 +15,10 @@ install -d -o homehub -g homehub -m 0755 /opt/homehub /opt/homehub/releases /opt
 install -d -o root -g root -m 0755 /opt/homehub/bin
 install -d -o root -g root -m 0700 /etc/homehub
 [[ -f /etc/homehub/homehub.env ]] || install -o root -g root -m 0600 /dev/null /etc/homehub/homehub.env
+# systemd credentials (LoadCredential= in homehub.service). The service won't start if a listed file is
+# missing, so create an empty one; fill it in afterwards (see deploy/README.md).
+install -d -o root -g root -m 0700 /etc/homehub/credentials
+[[ -f /etc/homehub/credentials/homeassistant.token ]] || install -o root -g root -m 0600 /dev/null /etc/homehub/credentials/homeassistant.token
 
 # Deploy script, owned by root so the runner cannot change it
 install -o root -g root -m 0755 "$HERE/install-release.sh" /opt/homehub/bin/install-release.sh
@@ -36,6 +40,7 @@ ufw allow from "$LAN" to any port 9090 proto tcp
 
 echo
 echo "Done. Next:"
-echo " 1. Put secrets in /etc/homehub/homehub.env (sudo nano /etc/homehub/homehub.env)"
+echo " 1. Put the Home Assistant token in /etc/homehub/credentials/homeassistant.token (see deploy/README.md)"
+echo "    and any other secrets in /etc/homehub/homehub.env (sudo nano /etc/homehub/homehub.env)"
 echo " 2. Remove the old open rules for 8080 and 9090: sudo ufw status numbered, then sudo ufw delete <number>"
 echo " 3. Install the GitHub runner as ghrunner (see deploy/README.md)"

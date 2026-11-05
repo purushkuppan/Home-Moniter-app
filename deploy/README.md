@@ -34,12 +34,32 @@ sudo bash deploy/setup-hub.sh
 
 Keep the repository private: self-hosted runners on public repositories can run code from strangers' pull requests.
 
+## Deploying from your PC (without a tag)
+`deploy.ps1` in the repo root builds and tests the jar on Windows, copies it to the hub and runs the
+same `install-release.sh` (health check and rollback included):
+```powershell
+.\deploy.ps1 -Version v0.2.0                       # default hub: purush@192.168.5.251
+.\deploy.ps1 -Version v0.2.1 -Hub purush@home-hub
+```
+It asks for your sudo password on the hub. Installing a version that already exists replaces that release.
+
 ## Secrets
-Put them only in `/etc/homehub/homehub.env` (root-only, mode 600), for example:
-```
-SMARTTHINGS_TOKEN=...
-```
 Never in git, issues, pull requests or chat.
+
+**Home Assistant token**: a systemd credential (`LoadCredential=` in `homehub.service`). systemd passes
+it to the service privately and Spring reads it as `homeassistant.token`. Create a long-lived access token
+in Home Assistant (Profile → Security), then on the hub:
+```bash
+sudo sh -c 'umask 077; cat > /etc/homehub/credentials/homeassistant.token'
+# paste the token, press Enter, then Ctrl+D
+sudo systemctl restart homehub
+```
+The file must exist or the service won't start; `setup-hub.sh` creates it empty.
+
+**Other settings** that should stay off git can go in `/etc/homehub/homehub.env` (root-only, mode 600)
+as environment variables, one `NAME=value` per line.
+
+After changing `homehub.service` in git, re-run `sudo bash deploy/setup-hub.sh` on the hub to install it.
 
 ## Useful commands
 ```bash

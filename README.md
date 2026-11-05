@@ -1,6 +1,6 @@
 # HomeHub
 
-A small home-appliance monitor. A Spring Boot app polls smart devices (SmartThings today),
+A small home-appliance monitor. A Spring Boot app reads smart devices through Home Assistant,
 stores state changes in SQLite, and shows them on a live web dashboard at http://localhost:8080.
 
 ## Requirements
@@ -31,13 +31,12 @@ Non-secret settings live in [`src/main/resources/application.properties`](src/ma
 | `homehub.connectors.enabled` | `true` | Master switch for polling |
 | `homehub.connectors.interval` | `30s` | Poll interval (`10s`, `5m`, ...) |
 | `homehub.connectors.fake.enabled` | `true` | Sample-data connector |
-| `homehub.connectors.smartthings.enabled` | `false` | SmartThings connector |
 | `homehub.connectors.homeassistant.enabled` | `false` | Home Assistant connector |
 | `homehub.connectors.homeassistant.live` | `true` | Receive Home Assistant changes instantly over its WebSocket API (polling remains as a fallback) |
 | `homehub.connectors.homeassistant.include` | doors, temperatures, machine/job states, locks | Home Assistant entity ids to read (comma-separated, `*` wildcard) |
 
 Any of these can be overridden on the command line, for example
-`.\mvnw.cmd spring-boot:run "-Dspring-boot.run.arguments=--homehub.connectors.smartthings.enabled=true"`.
+`.\mvnw.cmd spring-boot:run "-Dspring-boot.run.arguments=--homehub.connectors.fake.enabled=false --homehub.connectors.homeassistant.enabled=true"`.
 
 ## Secrets
 
@@ -55,7 +54,6 @@ secret logs a warning instead of failing.
 
 | Property | Used by | Environment variable fallback |
 |---|---|---|
-| `smartthings.token` | SmartThings connector | `SMARTTHINGS_TOKEN` |
 | `homeassistant.url` | Home Assistant connector | `HOMEASSISTANT_URL` |
 | `homeassistant.token` | Home Assistant connector (long-lived access token) | `HOMEASSISTANT_TOKEN` |
 
@@ -83,7 +81,6 @@ credentials after the properties:
 
 ```ini
 [Service]
-LoadCredential=smartthings.token:/etc/homehub/credentials/smartthings.token
 LoadCredential=homeassistant.token:/etc/homehub/credentials/homeassistant.token
 ```
 
@@ -110,7 +107,7 @@ a file, remove the old environment variable so a stale value doesn't take over.
 - `.gitignore` excludes `.homehub/`, `secrets.properties` and `*.secrets.properties` anywhere in
   the repo. Only `secrets.properties.example`, with placeholders, is committed.
 - Tokens are never written to the logs. Log messages name the property (for example
-  `smartthings.token`), never its value, and the Home Assistant settings print the token as `******`.
+  `homeassistant.token`), never its value, and the Home Assistant settings print the token as `******`.
 - Only the `health` and `info` Actuator endpoints are exposed, so configuration values are not
   reachable over HTTP.
 - If a token is ever committed by mistake, revoke it at the provider and create a new one.

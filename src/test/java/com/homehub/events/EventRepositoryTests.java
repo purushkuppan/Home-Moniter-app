@@ -1,14 +1,15 @@
 package com.homehub.events;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.groups.Tuple.tuple;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.junit.jupiter.api.BeforeEach;
 
 @SpringBootTest(properties = {
         "spring.datasource.url=jdbc:sqlite:target/test-data/repository.db",
@@ -54,11 +55,11 @@ class EventRepositoryTests {
         assertThat(repository.saveIfChanged(closed)).isPresent();   // closed again after open
 
         assertThat(repository.latest(50)).extracting(Event::device, Event::type, Event::value).containsExactly(
-                org.assertj.core.groups.Tuple.tuple("Refrigerator/Fridge", "contact", "closed"),
-                org.assertj.core.groups.Tuple.tuple("Refrigerator/Freezer", "contact", "closed"),
-                org.assertj.core.groups.Tuple.tuple("Refrigerator/Fridge", "contact", "open"),
-                org.assertj.core.groups.Tuple.tuple("Refrigerator/Fridge", "temperature", "43 F"),
-                org.assertj.core.groups.Tuple.tuple("Refrigerator/Fridge", "contact", "closed"));
+                tuple("Refrigerator/Fridge", "contact", "closed"),
+                tuple("Refrigerator/Freezer", "contact", "closed"),
+                tuple("Refrigerator/Fridge", "contact", "open"),
+                tuple("Refrigerator/Fridge", "temperature", "43 F"),
+                tuple("Refrigerator/Fridge", "contact", "closed"));
     }
 
     @Test
