@@ -30,7 +30,7 @@ class ConnectorSchedulerTests {
 
         new ConnectorScheduler(List.of(broken, connector("ok", List.of(e, e))), repo).pollAll();
 
-        verify(repo, times(2)).save(e);
+        verify(repo, times(2)).saveIfChanged(e);
     }
 
     @Test
@@ -45,6 +45,6 @@ class ConnectorSchedulerTests {
     void worksWithNoConnectors() {
         EventRepository repo = mock(EventRepository.class);
         new ConnectorScheduler(List.of(), repo).pollAll();
-        verify(repo, never()).save(any());
+        verify(repo, never()).saveIfChanged(any());
     }
 }

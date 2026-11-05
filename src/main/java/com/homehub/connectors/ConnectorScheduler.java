@@ -6,13 +6,11 @@ import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /** Polls every enabled {@link DeviceConnector} on a fixed delay and stores what they return. */
 @Component
-@EnableScheduling
 @ConditionalOnProperty(name = "homehub.connectors.enabled", havingValue = "true", matchIfMissing = true)
 public class ConnectorScheduler {
 
@@ -36,7 +34,7 @@ public class ConnectorScheduler {
     void pollOne(DeviceConnector connector) {
         try {
             List<Event> events = connector.poll();
-            events.forEach(repository::save);
+            events.forEach(repository::saveIfChanged);   // skips readings that match the last saved value
             log.debug("{} produced {} events", connector.name(), events.size());
         } catch (Exception ex) {
             log.warn("Connector {} failed", connector.name(), ex);

@@ -20,7 +20,9 @@ import org.springframework.web.client.RestClientResponseException;
 
 /**
  * Reads the fridge, washer and dryer from the SmartThings API.
- * The token comes from the SMARTTHINGS_TOKEN environment variable.
+ * The token comes from the {@code smartthings.token} property (normally set in
+ * ~/.homehub/secrets.properties), falling back to the SMARTTHINGS_TOKEN environment variable.
+ * The token is never logged.
  * Only values that changed since the previous poll are returned.
  */
 @Component
@@ -48,7 +50,7 @@ public class SmartThingsConnector implements DeviceConnector {
 
     @Autowired
     public SmartThingsConnector(
-            @Value("${SMARTTHINGS_TOKEN:}") String token,
+            @Value("${smartthings.token:${SMARTTHINGS_TOKEN:}}") String token,
             @Value("${homehub.connectors.smartthings.base-url:https://api.smartthings.com/v1}") String baseUrl) {
         this(RestClient.builder(), token, baseUrl);
     }
@@ -73,7 +75,8 @@ public class SmartThingsConnector implements DeviceConnector {
     public synchronized List<Event> poll() {
         if (!hasToken) {
             if (!missingTokenWarned) {
-                log.warn("SmartThings connector is enabled but SMARTTHINGS_TOKEN is not set; nothing will be polled.");
+                log.warn("SmartThings connector is enabled but no token is configured; nothing will be polled. "
+                        + "Set smartthings.token in ~/.homehub/secrets.properties (or the SMARTTHINGS_TOKEN environment variable).");
                 missingTokenWarned = true;
             }
             return List.of();
@@ -85,7 +88,7 @@ public class SmartThingsConnector implements DeviceConnector {
             }
         } catch (RestClientResponseException ex) {
             if (isUnauthorized(ex)) {
-                log.warn("SmartThings rejected the token (HTTP 401). Check that SMARTTHINGS_TOKEN is valid and not expired.");
+                log.warn("SmartThings rejected the token (HTTP 401). Check that smartthings.token is valid and not expired.");
             } else {
                 log.warn("SmartThings device list failed: HTTP {}", ex.getStatusCode().value());
             }

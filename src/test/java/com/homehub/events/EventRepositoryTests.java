@@ -38,6 +38,30 @@ class EventRepositoryTests {
     }
 
     @Test
+    void saveIfChangedSkipsRepeatsOfTheLastStoredValue() {
+        Event closed = new Event(null, "Refrigerator/Fridge", "contact", "closed", null);
+        Event temp = new Event(null, "Refrigerator/Fridge", "temperature", "43 F", null);
+
+        // First run of the app
+        assertThat(repository.saveIfChanged(closed)).isPresent();
+        assertThat(repository.saveIfChanged(temp)).isPresent();
+        // App restarts and reports the same state again: nothing new is stored
+        assertThat(repository.saveIfChanged(closed)).isEmpty();
+        assertThat(repository.saveIfChanged(temp)).isEmpty();
+        // Real changes are stored, compared per device + type
+        assertThat(repository.saveIfChanged(new Event(null, "Refrigerator/Fridge", "contact", "open", null))).isPresent();
+        assertThat(repository.saveIfChanged(new Event(null, "Refrigerator/Freezer", "contact", "closed", null))).isPresent();
+        assertThat(repository.saveIfChanged(closed)).isPresent();   // closed again after open
+
+        assertThat(repository.latest(50)).extracting(Event::device, Event::type, Event::value).containsExactly(
+                org.assertj.core.groups.Tuple.tuple("Refrigerator/Fridge", "contact", "closed"),
+                org.assertj.core.groups.Tuple.tuple("Refrigerator/Freezer", "contact", "closed"),
+                org.assertj.core.groups.Tuple.tuple("Refrigerator/Fridge", "contact", "open"),
+                org.assertj.core.groups.Tuple.tuple("Refrigerator/Fridge", "temperature", "43 F"),
+                org.assertj.core.groups.Tuple.tuple("Refrigerator/Fridge", "contact", "closed"));
+    }
+
+    @Test
     void latestRespectsLimit() {
         for (int i = 0; i < 5; i++) repository.add("d", "t", String.valueOf(i));
         assertThat(repository.latest(3)).extracting(Event::value).containsExactly("4", "3", "2");

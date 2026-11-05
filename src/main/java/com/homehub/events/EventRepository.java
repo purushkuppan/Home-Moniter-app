@@ -8,7 +8,10 @@ import java.sql.PreparedStatement;
 import java.sql.Statement;
 import java.time.Instant;
 import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -25,10 +28,13 @@ public class EventRepository {
 
     private final JdbcTemplate jdbc;
     private final String datasourceUrl;
+    private final ApplicationEventPublisher publisher;
 
-    public EventRepository(JdbcTemplate jdbc, @Value("${spring.datasource.url}") String datasourceUrl) {
+    public EventRepository(JdbcTemplate jdbc, @Value("${spring.datasource.url}") String datasourceUrl,
+                           ApplicationEventPublisher publisher) {
         this.jdbc = jdbc;
         this.datasourceUrl = datasourceUrl;
+        this.publisher = publisher;
     }
 
     @PostConstruct
@@ -42,6 +48,24 @@ public class EventRepository {
                     value  TEXT,
                     time   TEXT NOT NULL
                 )""");
+        // Makes "latest value of this device reading" a quick lookup for saveIfChanged.
+        jdbc.execute("CREATE INDEX IF NOT EXISTS idx_events_device_type ON events (device, type, id)");
+    }
+
+    /**
+     * Saves a device reading only if it differs from the last value stored for the same device and type.
+     * Used by connectors, so restarting the app (or reconnecting) doesn't record the same state again.
+     *
+     * @return the saved event, or empty if the value hadn't changed
+     */
+    public synchronized Optional<Event> saveIfChanged(Event event) {
+        List<String> last = jdbc.queryForList(
+                "SELECT value FROM events WHERE device = ? AND type = ? ORDER BY id DESC LIMIT 1",
+                String.class, event.device(), event.type());
+        if (!last.isEmpty() && Objects.equals(last.get(0), event.value())) {
+            return Optional.empty();
+        }
+        return Optional.of(save(event));
     }
 
     /** SQLite creates the file but not its folder, so create the folder named in the datasource URL. */
@@ -61,7 +85,7 @@ public class EventRepository {
     }
 
     /** Saves an event, keeping its time if it has one. The id is always assigned by the database. */
-    public Event save(Event event) {
+    public synchronized Event save(Event event) {
         Instant time = event.time() != null ? event.time() : Instant.now();
         KeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
@@ -74,7 +98,9 @@ public class EventRepository {
             ps.setString(4, time.toString());
             return ps;
         }, keys);
-        return new Event(keys.getKey().longValue(), event.device(), event.type(), event.value(), time);
+        Event saved = new Event(keys.getKey().longValue(), event.device(), event.type(), event.value(), time);
+        publisher.publishEvent(saved);   // lets EventStream push it to open dashboards
+        return saved;
     }
 
     public List<Event> latest(int limit) {
