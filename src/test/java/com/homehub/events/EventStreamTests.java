@@ -19,7 +19,8 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
         "spring.datasource.url=jdbc:sqlite:target/test-data/stream.db",
-        "homehub.connectors.enabled=false"
+        "homehub.connectors.enabled=false",
+        "homehub.alerts.enabled=false"   // alerts would add events of their own
 })
 class EventStreamTests {
 

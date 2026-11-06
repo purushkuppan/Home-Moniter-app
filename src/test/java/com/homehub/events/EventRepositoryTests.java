@@ -13,7 +13,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 @SpringBootTest(properties = {
         "spring.datasource.url=jdbc:sqlite:target/test-data/repository.db",
-        "homehub.connectors.enabled=false"
+        "homehub.connectors.enabled=false",
+        "homehub.alerts.enabled=false"   // alerts would add events of their own
 })
 class EventRepositoryTests {
 

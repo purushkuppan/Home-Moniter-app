@@ -36,9 +36,34 @@ Non-secret settings live in [`src/main/resources/application.properties`](src/ma
 | `homehub.connectors.homeassistant.include` | doors, temperatures, machine/job states, locks | Home Assistant entity ids to read (comma-separated, `*` wildcard) |
 | `homehub.controls.enabled` | `true` | Device controls on the dashboard (still need a PIN, see below) |
 | `homehub.controls.entities` | fridge, washer and dryer controls | Home Assistant entities that may be changed (`number`, `switch`, `select`, `button` only) |
+| `homehub.alerts.enabled` | `true` | Alerts on the dashboard (and phones, see below) |
+| `homehub.alerts.send-to` | empty (prod: the household phone) | Home Assistant notify actions, comma-separated, e.g. `notify.mobile_app_phone` |
+| `homehub.alerts.link` | `http://localhost:8080` (prod: the hub) | Page opened when a notification is tapped |
+| `homehub.alerts.door-open.[device]` | Fridge `1m`, Freezer `2m` | How long a door may stay open |
+| `homehub.alerts.too-warm.[device]` | Fridge `45`, Freezer `10` | Highest normal temperature (in the reading's unit) |
+| `homehub.alerts.too-warm-for` | `15m` | How long a temperature must stay too high |
+| `homehub.alerts.finished` | `Washer,Dryer` | Machines to report when their cycle ends |
 
 Any of these can be overridden on the command line, for example
 `.\mvnw.cmd spring-boot:run "-Dspring-boot.run.arguments=--homehub.connectors.fake.enabled=false --homehub.connectors.homeassistant.enabled=true"`.
+
+## Alerts
+
+HomeHub warns when something needs attention. Details and trade-offs: [ADR 5](docs/adr/0005-alerts-through-home-assistant-notify.md).
+
+| Alert | When | Afterwards |
+|---|---|---|
+| Door left open | Fridge door open 1 minute, freezer door 2 minutes | "Fridge door closed after 3 minutes" |
+| Too warm | Fridge above 45 °F or freezer above 10 °F for 15 minutes | "Fridge temperature is back to normal" |
+| Cycle finished | Washer or dryer ends its cycle | – |
+
+- **Dashboard:** a red banner shows problems still going on. Every alert is listed in the activity list
+  (Alert, All clear, Notice).
+- **Phone:** install the free **Home Assistant** Companion app, log in to your Home Assistant, allow notifications,
+  then add its notify action (Home Assistant: Settings › Tools › Actions, search `mobile_app`) to
+  `homehub.alerts.send-to`. Tapping a notification opens the dashboard (on the home network). The "all clear"
+  replaces the earlier notification.
+- A door that was already reported is not reported again after a restart.
 
 ## Secrets
 
