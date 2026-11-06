@@ -15,7 +15,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
         "spring.datasource.url=jdbc:sqlite:target/test-data/controller.db",
-        "homehub.connectors.enabled=false"
+        "homehub.connectors.enabled=false",
+        "homehub.alerts.enabled=false"   // alerts would add events of their own
 })
 class EventControllerTests {
 
@@ -45,6 +46,15 @@ class EventControllerTests {
                 HttpResponse.BodyHandlers.ofString());
         assertThat(page.statusCode()).isEqualTo(200);
         assertThat(page.headers().firstValue("Cache-Control")).hasValueSatisfying(v -> assertThat(v).contains("no-cache"));
+        // Every file in the jar is dated 1980; with a Last-Modified header, browsers holding an old copy would be told
+        // "not modified" after every deploy.
+        assertThat(page.headers().firstValue("Last-Modified")).isEmpty();
+
+        HttpResponse<String> revalidated = http.send(
+                HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/"))
+                        .header("If-Modified-Since", "Fri, 01 Feb 1980 00:00:00 GMT").build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertThat(revalidated.statusCode()).isEqualTo(200);
     }
 
     @Test
