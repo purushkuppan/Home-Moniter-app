@@ -21,7 +21,7 @@ jobs:
       - name: Build and test
         run: bash ./mvnw -B -ntp verify
       - name: Keep the jar for 7 days
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: homehub-jar
           path: target/homehub-*.jar
