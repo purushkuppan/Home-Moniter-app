@@ -593,6 +593,24 @@ async function load() {
   }
 }
 
+/**
+ * Reloads the page when the server restarted (a deploy), so every open dashboard picks up the new version.
+ * Skipped while the PIN dialog is open, so a reload never interrupts someone typing.
+ */
+let serverStarted = null;
+async function checkVersion() {
+  try {
+    const res = await fetch('/api/version', { cache: 'no-store' });
+    if (!res.ok) return;
+    const { started } = await res.json();
+    if (serverStarted && started !== serverStarted) {
+      if (!$('pinDialog').open) location.reload();   // otherwise: reload on the next check
+      return;
+    }
+    serverStarted = started;
+  } catch (err) { /* offline: try again on the next reconnect */ }
+}
+
 /** One event pushed by the server the moment it was saved. */
 function addLiveEvent(e) {
   if (events.some(x => x.id === e.id)) return;
@@ -819,7 +837,7 @@ function toast(message, isError = false) {
 
 function connect() {
   stream = new EventSource('/api/events/stream');
-  stream.onopen = () => load();   // (re)connected: catch up on anything missed while disconnected
+  stream.onopen = () => { checkVersion(); load(); };   // (re)connected: catch up on anything missed while disconnected
   stream.addEventListener('event', msg => {
     try { addLiveEvent(JSON.parse(msg.data)); } catch (err) { /* ignore a malformed message */ }
   });
@@ -862,7 +880,7 @@ $('pause').addEventListener('click', () => {
 
 load();
 connect();
-setInterval(() => { if (!paused) load(); }, SAFETY_RELOAD_MS);
+setInterval(() => { if (!paused) { checkVersion(); load(); } }, SAFETY_RELOAD_MS);
 // Keep "x seconds ago" and "Updated ..." current between events.
 setInterval(() => { if (!paused && events.length) { renderCards(); renderTable(); } }, 10000);
 </script>

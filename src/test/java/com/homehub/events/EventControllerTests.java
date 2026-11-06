@@ -39,6 +39,22 @@ class EventControllerTests {
     }
 
     @Test
+    void dashboardMustBeRevalidatedSoPhonesDontShowAnOldCopy() throws Exception {
+        HttpResponse<String> page = http.send(
+                HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/")).build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertThat(page.statusCode()).isEqualTo(200);
+        assertThat(page.headers().firstValue("Cache-Control")).hasValueSatisfying(v -> assertThat(v).contains("no-cache"));
+    }
+
+    @Test
+    void versionIdentifiesTheRunningServer() throws Exception {
+        String version = get("/api/version");
+        assertThat(version).contains("\"started\":\"").contains("\"version\":\"");
+        assertThat(get("/api/version")).isEqualTo(version);   // stable until the next restart
+    }
+
+    @Test
     void latestReturnsTheLastValueOfEveryReading() throws Exception {
         repository.add("Dryer", "machineState", "stop");
         for (int i = 0; i < 55; i++) repository.add("Refrigerator/Fridge", "contact", i % 2 == 0 ? "open" : "closed");
