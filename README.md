@@ -34,6 +34,8 @@ Non-secret settings live in [`src/main/resources/application.properties`](src/ma
 | `homehub.connectors.homeassistant.enabled` | `false` | Home Assistant connector |
 | `homehub.connectors.homeassistant.live` | `true` | Receive Home Assistant changes instantly over its WebSocket API (polling remains as a fallback) |
 | `homehub.connectors.homeassistant.include` | doors, temperatures, machine/job states, locks | Home Assistant entity ids to read (comma-separated, `*` wildcard) |
+| `homehub.controls.enabled` | `true` | Device controls on the dashboard (still need a PIN, see below) |
+| `homehub.controls.entities` | fridge, washer and dryer controls | Home Assistant entities that may be changed (`number`, `switch`, `select`, `button` only) |
 
 Any of these can be overridden on the command line, for example
 `.\mvnw.cmd spring-boot:run "-Dspring-boot.run.arguments=--homehub.connectors.fake.enabled=false --homehub.connectors.homeassistant.enabled=true"`.
@@ -56,6 +58,19 @@ secret logs a warning instead of failing.
 |---|---|---|
 | `homeassistant.url` | Home Assistant connector | `HOMEASSISTANT_URL` |
 | `homeassistant.token` | Home Assistant connector (long-lived access token) | `HOMEASSISTANT_TOKEN` |
+| `homehub.control.pin` | Device controls (at least 4 characters; without it controls are view-only) | `HOMEHUB_CONTROL_PIN` |
+
+## Device controls
+
+The **Controls** section of the dashboard changes devices through Home Assistant: fridge and freezer
+temperature, Power Cool/Freeze, ice maker, Sabbath mode, water-filter reset, washer and dryer
+start/pause/stop and washer cycle options. Details and trade-offs: [ADR 4](docs/adr/0004-device-control-through-home-assistant.md).
+
+- **Unlock** with the household PIN (`homehub.control.pin`). It stays unlocked for 10 minutes of activity.
+  Five wrong PINs lock controls for 5 minutes.
+- Every change asks for confirmation and is recorded in the activity list as a **Command**.
+- Only entities in `homehub.controls.entities` can be changed, within Home Assistant's own limits.
+- Samsung washers and dryers only start remotely while **Remote Control** is on at the machine.
 
 ### Option 1: secrets file in your home folder (local machine)
 

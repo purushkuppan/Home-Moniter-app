@@ -13,6 +13,8 @@ EnvironmentFile=-/etc/homehub/homehub.env
 # service in $CREDENTIALS_DIRECTORY, which the app reads through its configtree import.
 # The file must exist (setup-hub.sh creates it empty); an empty token leaves the connector idle.
 LoadCredential=homeassistant.token:/etc/homehub/credentials/homeassistant.token
+# PIN for device controls; an empty file keeps controls disabled.
+LoadCredential=homehub.control.pin:/etc/homehub/credentials/homehub.control.pin
 ExecStart=/usr/bin/java -Xms64m -Xmx384m -XX:+UseSerialGC -jar /opt/homehub/current/homehub.jar --spring.profiles.active=prod
 SuccessExitStatus=143
 Restart=on-failure

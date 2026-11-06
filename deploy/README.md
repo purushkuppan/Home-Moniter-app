@@ -56,6 +56,14 @@ sudo systemctl restart homehub
 ```
 The file must exist or the service won't start; `setup-hub.sh` creates it empty.
 
+**Control PIN** (device controls on the dashboard, at least 4 characters). While the file is empty,
+controls are view-only:
+```bash
+sudo sh -c 'umask 077; cat > /etc/homehub/credentials/homehub.control.pin'
+# type the PIN, press Enter, then Ctrl+D
+sudo systemctl restart homehub
+```
+
 **Other settings** that should stay off git can go in `/etc/homehub/homehub.env` (root-only, mode 600)
 as environment variables, one `NAME=value` per line.
 

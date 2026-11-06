@@ -115,7 +115,48 @@
   .reading { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; border-top: 1px dashed var(--border); }
   .reading:first-of-type { border-top: 0; }
   .reading .label { color: var(--muted); font-size: 13px; }
+  .reading-text { display: flex; flex-direction: column; line-height: 1.3; }
+  .reading .since { font-size: 11px; color: var(--muted); opacity: .8; }
   .empty-card { color: var(--muted); padding: 24px; text-align: center; grid-column: 1 / -1; }
+
+  /* Controls */
+  .section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 12px; }
+  .section-head h2 { margin: 0; }
+  .controls-note { color: var(--muted); font-size: 13px; margin: -4px 0 14px; }
+  .control { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px 10px; padding: 9px 0; border-top: 1px dashed var(--border); }
+  .card-head + .control { border-top: 0; }
+  .control .label { color: var(--muted); font-size: 13px; }
+  .control .note { flex-basis: 100%; font-size: 11px; color: var(--warn); line-height: 1.35; }
+  .control-actions { display: flex; align-items: center; gap: 6px; }
+  .control select {
+    font: inherit; font-size: 13px; padding: 5px 8px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
+  }
+  .btn.small { padding: 5px 11px; }
+  .btn.primary, .btn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover, .btn.on:hover { color: #fff; opacity: .9; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .seg { display: inline-flex; gap: 4px; }
+  .toast {
+    position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 20;
+    max-width: calc(100% - 32px); padding: 10px 16px; border-radius: 10px; font-size: 14px;
+    background: var(--text); color: var(--bg); box-shadow: var(--shadow);
+  }
+  .toast.error { background: var(--bad); color: #fff; }
+  dialog {
+    width: min(340px, calc(100% - 32px)); padding: 20px; border: 1px solid var(--border);
+    border-radius: var(--radius); background: var(--surface); color: var(--text); box-shadow: var(--shadow);
+  }
+  dialog::backdrop { background: rgba(10, 14, 22, .45); }
+  dialog h3 { margin: 0 0 4px; font-size: 17px; }
+  .dialog-sub { margin: 0 0 14px; color: var(--muted); font-size: 13px; }
+  dialog input {
+    width: 100%; padding: 10px; border-radius: 10px; border: 1px solid var(--border);
+    background: var(--surface-2); color: var(--text); font: inherit; font-size: 22px; letter-spacing: .35em; text-align: center;
+  }
+  dialog input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .pin-error { min-height: 1.3em; margin: 8px 0 0; color: var(--bad); font-size: 13px; }
+  dialog menu { display: flex; justify-content: flex-end; gap: 8px; margin: 12px 0 0; padding: 0; }
 
   /* Badges */
   .badge {
@@ -173,12 +214,50 @@
   .empty-row td { text-align: center; color: var(--muted); padding: 40px 16px; }
   .footer { display: flex; justify-content: space-between; padding: 10px 16px; color: var(--muted); font-size: 12px; border-top: 1px solid var(--border); }
 
+  header .tabs { display: none; }
+
   @media (max-width: 640px) {
     .wrap { padding-left: 16px; padding-right: 16px; }
     .brand p, .col-id, .col-ago, .col-type, .live .clock-text { display: none; }
-    header .wrap { gap: 10px; }
-    tbody td, thead th { padding-left: 12px; padding-right: 12px; }
-    .when .day { font-size: 13px; }
+    header { margin-bottom: 16px; }
+    header .wrap { gap: 10px; padding-top: 10px; padding-bottom: 10px; }
+
+    /* Tabs: one section at a time */
+    header .tabs { display: flex; gap: 6px; padding-top: 0; padding-bottom: 10px; }
+    .tabs button {
+      flex: 1; min-height: 38px; border: 1px solid var(--border); border-radius: 999px;
+      background: var(--surface); color: var(--muted); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
+    }
+    .tabs button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+    .cards { grid-template-columns: 1fr; gap: 12px; margin-bottom: 20px; }
+
+    /* Text of at least 16px stops iPhones from zooming in when a field is tapped */
+    .control select, .search input, dialog input { font-size: 16px; }
+    .control select { padding: 7px 8px; }
+    .btn, .btn.small, .chip { min-height: 38px; padding: 8px 14px; font-size: 14px; }
+    .control { padding: 11px 0; }
+
+    /* Activity: compact two-line rows instead of a wide table */
+    .table-scroll { overflow: visible; }
+    thead { display: none; }
+    tbody tr {
+      display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "device value" "when when";
+      align-items: center; gap: 4px 10px; padding: 10px 12px; border-bottom: 1px solid var(--border);
+    }
+    tbody tr:last-child { border-bottom: 0; }
+    tbody td { padding: 0; border-bottom: 0; }
+    tbody td.col-device { grid-area: device; min-width: 0; }
+    tbody td.col-value { grid-area: value; justify-self: end; max-width: 52vw; }
+    tbody td.when { grid-area: when; display: flex; flex-wrap: wrap; gap: 0 6px; padding-left: 40px; }
+    .when .day, .when .clock { font-size: 12px; font-weight: 400; color: var(--muted); }
+    .when .day::after { content: " ·"; }
+    .device { gap: 8px; }
+    .device .mini { width: 32px; height: 32px; }
+    td.col-value .badge { white-space: normal; text-align: right; line-height: 1.3; border-radius: 12px; }
+    tr.empty-row { display: block; }
+    tr.empty-row td { display: block; padding: 32px 12px; }
   }
 </style>
 </head>
@@ -194,12 +273,30 @@
     <div class="live" id="live"><span class="dot"></span><span id="status">Connecting…</span></div>
     <button class="btn" id="pause" type="button">Pause</button>
   </div>
+  <!-- Phones only: one section at a time instead of one very long page -->
+  <nav class="tabs wrap" id="tabs" aria-label="Sections">
+    <button type="button" data-tab="status">Status</button>
+    <button type="button" data-tab="controls">Controls</button>
+    <button type="button" data-tab="activity">Activity</button>
+  </nav>
 </header>
 
 <main class="wrap">
+  <div class="tab-panel" data-tab="status">
   <h2>Current status</h2>
   <section class="cards" id="cards"></section>
+  </div>
 
+  <div class="tab-panel" data-tab="controls">
+  <div class="section-head">
+    <h2>Controls</h2>
+    <button class="btn" id="lockBtn" type="button" hidden></button>
+  </div>
+  <p class="controls-note" id="controlsNote" hidden></p>
+  <section class="cards" id="controls"></section>
+  </div>
+
+  <div class="tab-panel" data-tab="activity">
   <h2>Recent activity</h2>
   <section class="panel">
     <div class="toolbar">
@@ -226,7 +323,22 @@
     </div>
     <div class="footer"><span id="count"></span><span>Live updates</span></div>
   </section>
+  </div>
 </main>
+
+<dialog id="pinDialog">
+  <form id="pinForm">
+    <h3>Enter PIN</h3>
+    <p class="dialog-sub">Needed to change devices. Stays unlocked for 10 minutes of activity.</p>
+    <input id="pinInput" type="password" inputmode="numeric" autocomplete="off" aria-label="PIN" required minlength="4">
+    <p class="pin-error" id="pinError" role="alert"></p>
+    <menu>
+      <button class="btn" type="button" id="pinCancel">Cancel</button>
+      <button class="btn primary" type="submit">Unlock</button>
+    </menu>
+  </form>
+</dialog>
+<div class="toast" id="toast" role="status" hidden></div>
 
 <script>
 const SAFETY_RELOAD_MS = 30000;   // live updates arrive instantly; this only catches anything missed
@@ -244,8 +356,12 @@ const ICONS = {
 const dayFormat = new Intl.DateTimeFormat(undefined, { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' });
 const clockFormat = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit', second: '2-digit' });
 const relative = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+const shortClock = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
+const weekdayClock = new Intl.DateTimeFormat(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+const dateClock = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
-let events = [];
+let events = [];    // latest 50 events, for the activity table
+let current = [];   // last value of every reading, for the status cards
 let lastSeenId = null;
 let activeType = 'all';
 let paused = false;
@@ -278,7 +394,7 @@ function iconFor(device, type) {
 
 /** "machineState" -> "Machine state" */
 // Friendlier names for technical reading types. Display only: the database keeps the original type.
-const TYPE_LABELS = { contact: 'Door' };
+const TYPE_LABELS = { contact: 'Door', command: 'Command' };
 
 function prettyType(type) {
   if (TYPE_LABELS[type]) return TYPE_LABELS[type];
@@ -290,7 +406,7 @@ function badge(type, value) {
   const v = (value ?? '').toString();
   const lower = v.toLowerCase();
   let tone = '';
-  if (type === 'temperature') tone = 'temp';
+  if (type === 'temperature' || type === 'command') tone = 'temp';
   else if (['closed', 'locked', 'done', 'finished', 'finish'].includes(lower)) tone = 'ok';
   else if (['open', 'unlocked', 'pause', 'paused'].includes(lower)) tone = 'warn';
   else if (['error', 'fault', 'alarm', 'unavailable'].includes(lower)) tone = 'bad';
@@ -302,7 +418,8 @@ function badge(type, value) {
 
 function formatValue(type, value) {
   if (type === 'temperature') return value.replace(/ ?(F|C)$/, '°$1');
-  const text = value.replace(/_/g, ' ');
+  const NBSP = String.fromCharCode(160);   // non-breaking space: keeps "43 °F" together when the text wraps
+  const text = value.replace(/_/g, ' ').replace(/ (°[FC])/g, NBSP + '$1');
   return text ? text.charAt(0).toUpperCase() + text.slice(1) : '—';
 }
 
@@ -321,16 +438,44 @@ function splitDevice(device) {
   return i < 0 ? { main: device, part: '' } : { main: device.slice(0, i), part: device.slice(i + 1) };
 }
 
+/** "4:51 PM" today, "Wed 10:48 PM" this week, otherwise "Oct 28, 10:48 PM". */
+function sinceText(date) {
+  const now = new Date();
+  if (date.toDateString() === now.toDateString()) return shortClock.format(date);
+  if (now - date < 6 * 86400000) return weekdayClock.format(date);
+  return dateClock.format(date);
+}
+
+/** Keeps `current` (last value of every reading) up to date with a newly saved event. */
+function updateCurrent(e) {
+  const key = readingKey(e);
+  const i = current.findIndex(x => readingKey(x) === key);
+  if (i < 0) current.push(e);
+  else if (e.id > current[i].id) current[i] = e;
+}
+
+function readingKey(e) {
+  return (e.device + '|' + e.type).toLowerCase();   // "freezer" and "Freezer" are the same reading
+}
+
 function renderCards() {
   const cards = $('cards');
-  // Newest value per device + type. Events arrive newest first.
+  // The last value of every reading, however old: from /api/events/latest plus live updates.
   const devices = new Map();
-  for (const e of events) {
+  for (const e of [...current].sort((a, b) => b.id - a.id)) {
+    if (e.type === 'command') continue;   // commands are shown in the activity list, not as a device reading
     const { main, part } = splitDevice(e.device);
-    if (!devices.has(main)) devices.set(main, { name: main, readings: new Map(), updated: new Date(e.time) });
-    const key = ((part ? part + ' ' : '') + e.type).toLowerCase();   // "freezer" and "Freezer" are the same reading
-    const readings = devices.get(main).readings;
-    if (!readings.has(key)) readings.set(key, { label: (part ? prettyType(part) + ' · ' : '') + prettyType(e.type).toLowerCase(), type: e.type, value: e.value });
+    const time = new Date(e.time);
+    if (!devices.has(main)) devices.set(main, { name: main, readings: new Map(), updated: time });
+    const device = devices.get(main);
+    if (time > device.updated) device.updated = time;
+    const key = ((part ? part + ' ' : '') + e.type).toLowerCase();
+    if (!device.readings.has(key)) {
+      device.readings.set(key, {
+        label: (part ? prettyType(part) + ' · ' : '') + prettyType(e.type).toLowerCase(),
+        type: e.type, value: e.value, time
+      });
+    }
   }
 
   cards.replaceChildren();
@@ -348,7 +493,11 @@ function renderCards() {
     card.append(head);
     for (const r of [...d.readings.values()].sort((a, b) => a.label.localeCompare(b.label))) {
       const row = el('div', 'reading');
-      row.append(el('span', 'label', r.label.charAt(0).toUpperCase() + r.label.slice(1)), badge(r.type, r.value));
+      const text = el('div', 'reading-text');
+      const since = el('span', 'since', 'since ' + sinceText(r.time));
+      since.title = dayFormat.format(r.time) + ', ' + clockFormat.format(r.time) + ' (' + timeAgo(r.time) + ')';
+      text.append(el('span', 'label', r.label.charAt(0).toUpperCase() + r.label.slice(1)), since);
+      row.append(text, badge(r.type, r.value));
       card.append(row);
     }
     cards.append(card);
@@ -389,7 +538,7 @@ function renderTable(newIds = new Set()) {
       const when = el('td', 'when');
       when.append(el('div', 'day', dayFormat.format(date)), el('div', 'clock', clockFormat.format(date)));
 
-      const device = el('td');
+      const device = el('td', 'col-device');
       const wrap = el('div', 'device');
       const mini = el('span', 'mini'); mini.append(icon(iconFor(e.device, e.type)));
       const { main, part } = splitDevice(e.device);
@@ -398,7 +547,7 @@ function renderTable(newIds = new Set()) {
       wrap.append(mini, name);
       device.append(wrap);
 
-      const value = el('td'); value.append(badge(e.type, e.value));
+      const value = el('td', 'col-value'); value.append(badge(e.type, e.value));
 
       tr.append(when, device, el('td', 'type col-type', prettyType(e.type)), value,
                 el('td', 'ago col-ago', timeAgo(date)), el('td', 'id col-id', e.id));
@@ -424,32 +573,271 @@ function renderAll(newIds) {
 /** Full reload of the latest 50 events. Used at start, after every reconnect and as a slow safety net. */
 async function load() {
   try {
-    const res = await fetch('/api/events', { cache: 'no-store' });
+    const [res, latestRes] = await Promise.all([
+      fetch('/api/events', { cache: 'no-store' }),
+      fetch('/api/events/latest', { cache: 'no-store' })
+    ]);
     if (!res.ok) throw new Error('HTTP ' + res.status);
+    if (!latestRes.ok) throw new Error('HTTP ' + latestRes.status);
     events = await res.json();
+    current = await latestRes.json();
 
     const newIds = new Set(lastSeenId === null ? [] : events.filter(e => e.id > lastSeenId).map(e => e.id));
     if (events.length) lastSeenId = Math.max(lastSeenId ?? 0, ...events.map(e => e.id));
 
     renderAll(newIds);
+    loadControls();
     if (!paused && stream && stream.readyState === EventSource.OPEN) setStatus('Live', '', clockFormat.format(new Date()));
   } catch (err) {
     setStatus('Offline · retrying', 'error');
   }
 }
 
+/**
+ * Reloads the page when the server restarted (a deploy), so every open dashboard picks up the new version.
+ * Skipped while the PIN dialog is open, so a reload never interrupts someone typing.
+ */
+let serverStarted = null;
+async function checkVersion() {
+  try {
+    const res = await fetch('/api/version', { cache: 'no-store' });
+    if (!res.ok) return;
+    const { started } = await res.json();
+    if (serverStarted && started !== serverStarted) {
+      if (!$('pinDialog').open) location.reload();   // otherwise: reload on the next check
+      return;
+    }
+    serverStarted = started;
+  } catch (err) { /* offline: try again on the next reconnect */ }
+}
+
 /** One event pushed by the server the moment it was saved. */
 function addLiveEvent(e) {
   if (events.some(x => x.id === e.id)) return;
   events = [e, ...events].sort((a, b) => b.id - a.id).slice(0, MAX_EVENTS);
+  updateCurrent(e);
   lastSeenId = Math.max(lastSeenId ?? 0, e.id);
   renderAll(new Set([e.id]));
   setStatus('Live', '', clockFormat.format(new Date()));
+  if (e.type === 'command') setTimeout(loadControls, 1500);   // someone changed a device: show its new setting
+}
+
+// ---------------------------------------------------------------- device controls
+
+const PIN_HEADER = 'X-HomeHub-Pin';
+const AUTO_LOCK_MS = 10 * 60 * 1000;
+const CYCLE_VERBS = { run: 'Start', pause: 'Pause', stop: 'Stop' };
+
+let controlsView = { enabled: false, controls: [] };
+let controlPin = null;   // kept only in memory: never stored, gone when the tab closes
+let lockTimer = null;
+let pinResolve = null;
+
+async function loadControls() {
+  try {
+    const res = await fetch('/api/controls', { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    controlsView = await res.json();
+  } catch (err) {
+    controlsView = { enabled: false, reason: 'Controls are not available right now.', controls: [] };
+  }
+  renderControls();
+}
+
+function optionLabel(option) {
+  const text = String(option).replace(/_/g, ' ');
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function numberValues(c) {
+  const step = c.step > 0 ? c.step : 1;
+  const decimals = (String(step).split('.')[1] || '').length;
+  const values = [];
+  for (let v = c.min; v <= c.max + step / 1000 && values.length < 300; v += step) values.push(Number(v.toFixed(decimals)));
+  return values;
+}
+
+function renderControls() {
+  const note = $('controlsNote');
+  note.textContent = controlsView.reason || '';
+  note.hidden = !controlsView.reason;
+  const lockBtn = $('lockBtn');
+  lockBtn.hidden = !controlsView.enabled;
+  lockBtn.textContent = controlPin ? 'Lock' : 'Unlock';
+
+  const groups = new Map();
+  for (const c of controlsView.controls || []) {
+    if (!groups.has(c.device)) groups.set(c.device, []);
+    groups.get(c.device).push(c);
+  }
+  const box = $('controls');
+  box.replaceChildren();
+  for (const [device, controls] of groups) {
+    const card = el('article', 'card');
+    const head = el('div', 'card-head');
+    const ic = el('div', 'card-icon'); ic.append(icon(iconFor(device)));
+    const titles = el('div');
+    titles.append(el('div', 'card-title', device),
+        el('div', 'card-sub', !controlsView.enabled ? 'View only' : controlPin ? 'Unlocked' : 'Locked · PIN needed to change'));
+    head.append(ic, titles);
+    card.append(head);
+    for (const c of controls) card.append(controlRow(c));
+    box.append(card);
+  }
+}
+
+function controlRow(c) {
+  const row = el('div', 'control');
+  const actions = el('div', 'control-actions');
+  const disabled = !controlsView.enabled;
+  const button = (text, onClick, extra = '') => {
+    const b = el('button', 'btn small ' + extra, text);
+    b.type = 'button';
+    b.disabled = disabled;
+    b.onclick = onClick;
+    return b;
+  };
+
+  if (c.kind === 'number') {
+    const unit = c.unit ? ' ' + c.unit : '';
+    const select = el('select');
+    select.disabled = disabled;
+    select.setAttribute('aria-label', c.label);
+    for (const v of numberValues(c)) {
+      const o = el('option', '', v + unit);
+      o.value = v;
+      if (Number(c.value) === v) o.selected = true;
+      select.append(o);
+    }
+    actions.append(select, button('Set', () => {
+      if (Number(select.value) === Number(c.value)) return toast(c.label + ' is already ' + c.value + unit + '.');
+      if (confirm('Set ' + c.label.toLowerCase() + ' to ' + select.value + unit + '?')) sendCommand(c, select.value);
+    }));
+  } else if (c.kind === 'switch') {
+    const on = c.value === 'on';
+    actions.append(button(on ? 'On' : 'Off', () => {
+      const next = on ? 'off' : 'on';
+      if (confirm('Turn ' + c.label.toLowerCase() + ' ' + next + '?')) sendCommand(c, next);
+    }, on ? 'on' : ''));
+  } else if (c.kind === 'cycle') {
+    const seg = el('div', 'seg');
+    for (const option of ['run', 'pause', 'stop'].filter(o => c.options.includes(o))) {
+      seg.append(button(CYCLE_VERBS[option], () => {
+        if (confirm(CYCLE_VERBS[option] + ' the ' + c.device.toLowerCase() + '?')) sendCommand(c, option);
+      }, c.value === option ? 'on' : ''));
+    }
+    actions.append(seg);
+  } else if (c.kind === 'select') {
+    const select = el('select');
+    select.disabled = disabled;
+    select.setAttribute('aria-label', c.label);
+    for (const option of c.options) {
+      const o = el('option', '', optionLabel(option));
+      o.value = option;
+      if (c.value === option) o.selected = true;
+      select.append(o);
+    }
+    actions.append(select, button('Set', () => {
+      if (select.value === c.value) return toast(c.label + ' is already ' + optionLabel(c.value).toLowerCase() + '.');
+      if (confirm('Set ' + c.label.toLowerCase() + ' to ' + optionLabel(select.value).toLowerCase() + '?')) sendCommand(c, select.value);
+    }));
+  } else if (c.kind === 'button') {
+    actions.append(button('Press', () => {
+      if (confirm(c.label + '?')) sendCommand(c, '');
+    }));
+  }
+
+  row.append(el('span', 'label', c.label), actions);
+  if (c.note) row.append(el('span', 'note', c.note));
+  return row;
+}
+
+async function sendCommand(c, value) {
+  if (!await ensureUnlocked()) return;
+  try {
+    const res = await fetch('/api/controls/' + encodeURIComponent(c.id), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', [PIN_HEADER]: controlPin },
+      body: JSON.stringify({ value })
+    });
+    const body = await res.json().catch(() => ({}));
+    if (res.status === 401 || res.status === 429 || res.status === 403) lockControls();
+    if (!res.ok) return toast(body.message || 'That didn\'t work (HTTP ' + res.status + ').', true);
+    toast(body.message || 'Done.');
+    keepUnlocked();
+    setTimeout(loadControls, 1500);   // give the device a moment, then show its new state
+  } catch (err) {
+    toast('HomeHub is not reachable.', true);
+  }
+}
+
+/** Resolves true once the PIN has been accepted (asking for it if needed), false if the user cancels. */
+function ensureUnlocked() {
+  if (controlPin) return Promise.resolve(true);
+  $('pinError').textContent = '';
+  $('pinInput').value = '';
+  $('pinDialog').showModal();
+  $('pinInput').focus();
+  return new Promise(resolve => { pinResolve = resolve; });
+}
+
+function closePinDialog(result) {
+  $('pinDialog').close();
+  if (pinResolve) pinResolve(result);
+  pinResolve = null;
+}
+
+$('pinForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  const attempt = $('pinInput').value;
+  try {
+    const res = await fetch('/api/controls/unlock', { method: 'POST', headers: { [PIN_HEADER]: attempt } });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      $('pinError').textContent = body.message || 'Could not check the PIN.';
+      $('pinInput').select();
+      return;
+    }
+    controlPin = attempt;
+    keepUnlocked();
+    renderControls();
+    closePinDialog(true);
+  } catch (err) {
+    $('pinError').textContent = 'HomeHub is not reachable.';
+  }
+});
+$('pinCancel').addEventListener('click', () => closePinDialog(false));
+$('pinDialog').addEventListener('cancel', () => { if (pinResolve) pinResolve(false); pinResolve = null; });
+
+$('lockBtn').addEventListener('click', () => {
+  if (controlPin) lockControls();
+  else ensureUnlocked();
+});
+
+function keepUnlocked() {
+  clearTimeout(lockTimer);
+  lockTimer = setTimeout(lockControls, AUTO_LOCK_MS);
+}
+
+function lockControls() {
+  controlPin = null;
+  clearTimeout(lockTimer);
+  renderControls();
+}
+
+let toastTimer = null;
+function toast(message, isError = false) {
+  const t = $('toast');
+  t.textContent = message;
+  t.className = 'toast' + (isError ? ' error' : '');
+  t.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.hidden = true; }, isError ? 6000 : 3500);
 }
 
 function connect() {
   stream = new EventSource('/api/events/stream');
-  stream.onopen = () => load();   // (re)connected: catch up on anything missed while disconnected
+  stream.onopen = () => { checkVersion(); load(); };   // (re)connected: catch up on anything missed while disconnected
   stream.addEventListener('event', msg => {
     try { addLiveEvent(JSON.parse(msg.data)); } catch (err) { /* ignore a malformed message */ }
   });
@@ -467,6 +855,18 @@ function disconnect() {
 
 $('search').addEventListener('input', () => renderTable());
 
+// Phone tabs (desktop shows every section, so this only matters on small screens).
+const TAB_KEY = 'homehub.tab';
+function showTab(name) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.dataset.tab === name));
+  document.querySelectorAll('#tabs button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.tab === name)));
+  try { localStorage.setItem(TAB_KEY, name); } catch (err) { /* private mode: just don't remember */ }
+}
+document.querySelectorAll('#tabs button').forEach(b => b.addEventListener('click', () => { showTab(b.dataset.tab); window.scrollTo(0, 0); }));
+let savedTab = null;
+try { savedTab = localStorage.getItem(TAB_KEY); } catch (err) { /* ignore */ }
+showTab(['status', 'controls', 'activity'].includes(savedTab) ? savedTab : 'status');
+
 $('pause').addEventListener('click', () => {
   paused = !paused;
   $('pause').textContent = paused ? 'Resume' : 'Pause';
@@ -480,7 +880,7 @@ $('pause').addEventListener('click', () => {
 
 load();
 connect();
-setInterval(() => { if (!paused) load(); }, SAFETY_RELOAD_MS);
+setInterval(() => { if (!paused) { checkVersion(); load(); } }, SAFETY_RELOAD_MS);
 // Keep "x seconds ago" and "Updated ..." current between events.
 setInterval(() => { if (!paused && events.length) { renderCards(); renderTable(); } }, 10000);
 </script>

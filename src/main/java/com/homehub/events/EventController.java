@@ -38,4 +38,10 @@ public class EventController {
     public List<Event> latest() {
         return repository.latest(50);
     }
+
+    /** Current state: the last value of every device reading, however old (used by the status cards). */
+    @GetMapping("/latest")
+    public List<Event> latestPerReading() {
+        return repository.latestPerReading();
+    }
 }

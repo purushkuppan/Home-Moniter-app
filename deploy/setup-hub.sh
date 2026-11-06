@@ -19,6 +19,7 @@ install -d -o root -g root -m 0700 /etc/homehub
 # missing, so create an empty one; fill it in afterwards (see deploy/README.md).
 install -d -o root -g root -m 0700 /etc/homehub/credentials
 [[ -f /etc/homehub/credentials/homeassistant.token ]] || install -o root -g root -m 0600 /dev/null /etc/homehub/credentials/homeassistant.token
+[[ -f /etc/homehub/credentials/homehub.control.pin ]] || install -o root -g root -m 0600 /dev/null /etc/homehub/credentials/homehub.control.pin
 
 # Deploy script, owned by root so the runner cannot change it
 install -o root -g root -m 0755 "$HERE/install-release.sh" /opt/homehub/bin/install-release.sh

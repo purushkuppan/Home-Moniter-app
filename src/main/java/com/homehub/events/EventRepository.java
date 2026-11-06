@@ -107,4 +107,16 @@ public class EventRepository {
         return jdbc.query("SELECT id, device, type, value, time FROM events ORDER BY id DESC LIMIT ?",
                 ROW_MAPPER, limit);
     }
+
+    /**
+     * The most recent event of every device reading (device + type), however long ago it happened.
+     * This is the current state of the home; sorted by device, then type.
+     */
+    public List<Event> latestPerReading() {
+        return jdbc.query("""
+                SELECT e.id, e.device, e.type, e.value, e.time
+                FROM events e
+                JOIN (SELECT MAX(id) AS id FROM events GROUP BY device, type) newest ON newest.id = e.id
+                ORDER BY e.device, e.type""", ROW_MAPPER);
+    }
 }

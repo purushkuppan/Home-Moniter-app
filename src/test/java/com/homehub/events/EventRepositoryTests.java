@@ -63,6 +63,22 @@ class EventRepositoryTests {
     }
 
     @Test
+    void latestPerReadingKeepsOldReadingsThatNeverChanged() {
+        // Last night: the starting state of every reading
+        repository.add("Washer", "machineState", "stop");
+        repository.add("Refrigerator/Freezer", "temperature", "5 F");
+        repository.add("Refrigerator/Fridge", "contact", "closed");
+        // Today: lots of fridge door activity, far more than one page of events
+        for (int i = 0; i < 60; i++) repository.add("Refrigerator/Fridge", "contact", i % 2 == 0 ? "open" : "closed");
+
+        assertThat(repository.latest(50)).extracting(Event::device).containsOnly("Refrigerator/Fridge");
+        assertThat(repository.latestPerReading()).extracting(Event::device, Event::type, Event::value).containsExactly(
+                tuple("Refrigerator/Freezer", "temperature", "5 F"),
+                tuple("Refrigerator/Fridge", "contact", "closed"),
+                tuple("Washer", "machineState", "stop"));
+    }
+
+    @Test
     void latestRespectsLimit() {
         for (int i = 0; i < 5; i++) repository.add("d", "t", String.valueOf(i));
         assertThat(repository.latest(3)).extracting(Event::value).containsExactly("4", "3", "2");
