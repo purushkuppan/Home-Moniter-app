@@ -1,26 +1,32 @@
-package com.homehub.connectors;
+package com.homehub.homeassistant;
 
+import java.util.List;
 import java.util.Map;
 
 /** Null-safe helpers for walking JSON that was parsed into plain maps and lists. */
-final class JsonValues {
+public final class JsonValues {
 
     private JsonValues() {
     }
 
     /** The value as a map, or an empty map if it is missing or not an object. */
     @SuppressWarnings("unchecked")
-    static Map<String, Object> asMap(Object value) {
+    public static Map<String, Object> asMap(Object value) {
         return value instanceof Map<?, ?> map ? (Map<String, Object>) map : Map.of();
     }
 
+    /** The value as a list, or an empty list if it is missing or not an array. */
+    public static List<?> asList(Object value) {
+        return value instanceof List<?> list ? list : List.of();
+    }
+
     /** The value as text, or "" if it is missing. */
-    static String text(Object value) {
+    public static String text(Object value) {
         return value == null ? "" : value.toString();
     }
 
     /** The first value that is not blank, or "". */
-    static String firstNonBlank(String... values) {
+    public static String firstNonBlank(String... values) {
         for (String value : values) {
             if (value != null && !value.isBlank()) return value;
         }

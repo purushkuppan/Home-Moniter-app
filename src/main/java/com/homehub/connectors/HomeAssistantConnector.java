@@ -1,11 +1,13 @@
 package com.homehub.connectors;
 
-import static com.homehub.connectors.JsonValues.asMap;
-import static com.homehub.connectors.JsonValues.firstNonBlank;
-import static com.homehub.connectors.JsonValues.text;
+import static com.homehub.homeassistant.JsonValues.asMap;
+import static com.homehub.homeassistant.JsonValues.firstNonBlank;
+import static com.homehub.homeassistant.JsonValues.text;
 
 import com.homehub.events.Event;
 import com.homehub.events.EventRepository;
+import com.homehub.homeassistant.DeviceNames;
+import com.homehub.homeassistant.EntityPatterns;
 import com.homehub.homeassistant.HomeAssistantProperties;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -28,7 +30,6 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,7 +39,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.SmartLifecycle;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
@@ -62,7 +62,6 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
 
     private static final Logger log = LoggerFactory.getLogger(HomeAssistantConnector.class);
     private static final ParameterizedTypeReference<List<Map<String, Object>>> STATES = new ParameterizedTypeReference<>() {};
-    private static final Pattern SAFE_ENTITY_ID = Pattern.compile("[a-z0-9_]+\\.[a-z0-9_]+");
     private static final Set<String> CONTACT_CLASSES = Set.of("door", "window", "opening", "garage_door");
     static final String DEFAULT_INCLUDE =
             "binary_sensor.*_door,sensor.*_temperature,sensor.*_machine_state,sensor.*_job_state,lock.*";
@@ -71,7 +70,7 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
 
     private final RestClient client;
     private final boolean configured;
-    private final List<Pattern> include;
+    private final EntityPatterns include;
     private final JsonMapper json = JsonMapper.builder().build();
     /** Last value seen per entity id, shared by the live and poll paths. */
     private final Map<String, String> lastValues = new HashMap<>();
@@ -104,10 +103,7 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
     HomeAssistantConnector(RestClient.Builder builder, HomeAssistantProperties properties, String include,
                            Consumer<Event> liveSink) {
         this.configured = properties.isConfigured();
-        this.include = Arrays.stream(include.split(","))
-                .map(String::trim).filter(s -> !s.isEmpty())
-                .map(HomeAssistantConnector::globToRegex)
-                .toList();
+        this.include = EntityPatterns.parse(include);
         this.liveSink = liveSink;
         if (configured) {
             String base = properties.url().trim().replaceAll("/+$", "");
@@ -324,7 +320,7 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
     // ---------------------------------------------------------------- mapping
 
     private boolean isIncluded(String entityId) {
-        return include.stream().anyMatch(p -> p.matcher(entityId).matches());
+        return include.matches(entityId);
     }
 
     /**
@@ -332,26 +328,8 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
      * If that fails, events fall back to the entity's friendly name.
      */
     private void resolveDeviceNames(List<String> entityIds) {
-        List<String> unknown = entityIds.stream()
-                .filter(id -> !deviceNames.containsKey(id) && SAFE_ENTITY_ID.matcher(id).matches())
-                .toList();
-        if (unknown.isEmpty()) return;
-        String template = "{% for e in [" + unknown.stream().map(id -> "'" + id + "'").collect(Collectors.joining(","))
-                + "] %}{{ e }}|{{ device_attr(e, 'name_by_user') or device_attr(e, 'name') or '' }}\n{% endfor %}";
-        try {
-            String body = client.post().uri("/template")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body(Map.of("template", template))
-                    .retrieve().body(String.class);
-            for (String line : (body == null ? "" : body).split("\n")) {
-                int bar = line.indexOf('|');
-                if (bar > 0) deviceNames.put(line.substring(0, bar).trim(), line.substring(bar + 1).trim());
-            }
-        } catch (RestClientResponseException ex) {
-            if (ex.getStatusCode().isSameCodeAs(HttpStatus.UNAUTHORIZED)) throw ex;
-            log.debug("Home Assistant device lookup failed (HTTP {}); using friendly names", ex.getStatusCode().value());
-        }
-        unknown.forEach(id -> deviceNames.putIfAbsent(id, ""));
+        List<String> unknown = entityIds.stream().filter(id -> !deviceNames.containsKey(id)).toList();
+        if (!unknown.isEmpty()) deviceNames.putAll(DeviceNames.lookup(client, unknown));
     }
 
     private Event toEvent(Map<String, Object> state, Instant time) {
@@ -426,9 +404,5 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
         Throwable root = error;
         while (root.getCause() != null) root = root.getCause();
         return root.getClass().getSimpleName() + (root.getMessage() == null ? "" : ": " + root.getMessage());
-    }
-
-    private static Pattern globToRegex(String glob) {
-        return Pattern.compile(Arrays.stream(glob.split("\\*", -1)).map(Pattern::quote).collect(Collectors.joining(".*")));
     }
 }

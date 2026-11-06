@@ -119,6 +119,45 @@
   .reading .since { font-size: 11px; color: var(--muted); opacity: .8; }
   .empty-card { color: var(--muted); padding: 24px; text-align: center; grid-column: 1 / -1; }
 
+  /* Controls */
+  .section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 12px; }
+  .section-head h2 { margin: 0; }
+  .controls-note { color: var(--muted); font-size: 13px; margin: -4px 0 14px; }
+  .control { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px 10px; padding: 9px 0; border-top: 1px dashed var(--border); }
+  .card-head + .control { border-top: 0; }
+  .control .label { color: var(--muted); font-size: 13px; }
+  .control .note { flex-basis: 100%; font-size: 11px; color: var(--warn); line-height: 1.35; }
+  .control-actions { display: flex; align-items: center; gap: 6px; }
+  .control select {
+    font: inherit; font-size: 13px; padding: 5px 8px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
+  }
+  .btn.small { padding: 5px 11px; }
+  .btn.primary, .btn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover, .btn.on:hover { color: #fff; opacity: .9; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .seg { display: inline-flex; gap: 4px; }
+  .toast {
+    position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 20;
+    max-width: calc(100% - 32px); padding: 10px 16px; border-radius: 10px; font-size: 14px;
+    background: var(--text); color: var(--bg); box-shadow: var(--shadow);
+  }
+  .toast.error { background: var(--bad); color: #fff; }
+  dialog {
+    width: min(340px, calc(100% - 32px)); padding: 20px; border: 1px solid var(--border);
+    border-radius: var(--radius); background: var(--surface); color: var(--text); box-shadow: var(--shadow);
+  }
+  dialog::backdrop { background: rgba(10, 14, 22, .45); }
+  dialog h3 { margin: 0 0 4px; font-size: 17px; }
+  .dialog-sub { margin: 0 0 14px; color: var(--muted); font-size: 13px; }
+  dialog input {
+    width: 100%; padding: 10px; border-radius: 10px; border: 1px solid var(--border);
+    background: var(--surface-2); color: var(--text); font: inherit; font-size: 22px; letter-spacing: .35em; text-align: center;
+  }
+  dialog input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .pin-error { min-height: 1.3em; margin: 8px 0 0; color: var(--bad); font-size: 13px; }
+  dialog menu { display: flex; justify-content: flex-end; gap: 8px; margin: 12px 0 0; padding: 0; }
+
   /* Badges */
   .badge {
     display: inline-flex; align-items: center; gap: 6px;
@@ -202,6 +241,13 @@
   <h2>Current status</h2>
   <section class="cards" id="cards"></section>
 
+  <div class="section-head">
+    <h2>Controls</h2>
+    <button class="btn" id="lockBtn" type="button" hidden></button>
+  </div>
+  <p class="controls-note" id="controlsNote" hidden></p>
+  <section class="cards" id="controls"></section>
+
   <h2>Recent activity</h2>
   <section class="panel">
     <div class="toolbar">
@@ -229,6 +275,20 @@
     <div class="footer"><span id="count"></span><span>Live updates</span></div>
   </section>
 </main>
+
+<dialog id="pinDialog">
+  <form id="pinForm">
+    <h3>Enter PIN</h3>
+    <p class="dialog-sub">Needed to change devices. Stays unlocked for 10 minutes of activity.</p>
+    <input id="pinInput" type="password" inputmode="numeric" autocomplete="off" aria-label="PIN" required minlength="4">
+    <p class="pin-error" id="pinError" role="alert"></p>
+    <menu>
+      <button class="btn" type="button" id="pinCancel">Cancel</button>
+      <button class="btn primary" type="submit">Unlock</button>
+    </menu>
+  </form>
+</dialog>
+<div class="toast" id="toast" role="status" hidden></div>
 
 <script>
 const SAFETY_RELOAD_MS = 30000;   // live updates arrive instantly; this only catches anything missed
@@ -284,7 +344,7 @@ function iconFor(device, type) {
 
 /** "machineState" -> "Machine state" */
 // Friendlier names for technical reading types. Display only: the database keeps the original type.
-const TYPE_LABELS = { contact: 'Door' };
+const TYPE_LABELS = { contact: 'Door', command: 'Command' };
 
 function prettyType(type) {
   if (TYPE_LABELS[type]) return TYPE_LABELS[type];
@@ -296,7 +356,7 @@ function badge(type, value) {
   const v = (value ?? '').toString();
   const lower = v.toLowerCase();
   let tone = '';
-  if (type === 'temperature') tone = 'temp';
+  if (type === 'temperature' || type === 'command') tone = 'temp';
   else if (['closed', 'locked', 'done', 'finished', 'finish'].includes(lower)) tone = 'ok';
   else if (['open', 'unlocked', 'pause', 'paused'].includes(lower)) tone = 'warn';
   else if (['error', 'fault', 'alarm', 'unavailable'].includes(lower)) tone = 'bad';
@@ -352,6 +412,7 @@ function renderCards() {
   // The last value of every reading, however old: from /api/events/latest plus live updates.
   const devices = new Map();
   for (const e of [...current].sort((a, b) => b.id - a.id)) {
+    if (e.type === 'command') continue;   // commands are shown in the activity list, not as a device reading
     const { main, part } = splitDevice(e.device);
     const time = new Date(e.time);
     if (!devices.has(main)) devices.set(main, { name: main, readings: new Map(), updated: time });
@@ -474,6 +535,7 @@ async function load() {
     if (events.length) lastSeenId = Math.max(lastSeenId ?? 0, ...events.map(e => e.id));
 
     renderAll(newIds);
+    loadControls();
     if (!paused && stream && stream.readyState === EventSource.OPEN) setStatus('Live', '', clockFormat.format(new Date()));
   } catch (err) {
     setStatus('Offline · retrying', 'error');
@@ -488,6 +550,220 @@ function addLiveEvent(e) {
   lastSeenId = Math.max(lastSeenId ?? 0, e.id);
   renderAll(new Set([e.id]));
   setStatus('Live', '', clockFormat.format(new Date()));
+  if (e.type === 'command') setTimeout(loadControls, 1500);   // someone changed a device: show its new setting
+}
+
+// ---------------------------------------------------------------- device controls
+
+const PIN_HEADER = 'X-HomeHub-Pin';
+const AUTO_LOCK_MS = 10 * 60 * 1000;
+const CYCLE_VERBS = { run: 'Start', pause: 'Pause', stop: 'Stop' };
+
+let controlsView = { enabled: false, controls: [] };
+let controlPin = null;   // kept only in memory: never stored, gone when the tab closes
+let lockTimer = null;
+let pinResolve = null;
+
+async function loadControls() {
+  try {
+    const res = await fetch('/api/controls', { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    controlsView = await res.json();
+  } catch (err) {
+    controlsView = { enabled: false, reason: 'Controls are not available right now.', controls: [] };
+  }
+  renderControls();
+}
+
+function optionLabel(option) {
+  const text = String(option).replace(/_/g, ' ');
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function numberValues(c) {
+  const step = c.step > 0 ? c.step : 1;
+  const decimals = (String(step).split('.')[1] || '').length;
+  const values = [];
+  for (let v = c.min; v <= c.max + step / 1000 && values.length < 300; v += step) values.push(Number(v.toFixed(decimals)));
+  return values;
+}
+
+function renderControls() {
+  const note = $('controlsNote');
+  note.textContent = controlsView.reason || '';
+  note.hidden = !controlsView.reason;
+  const lockBtn = $('lockBtn');
+  lockBtn.hidden = !controlsView.enabled;
+  lockBtn.textContent = controlPin ? 'Lock' : 'Unlock';
+
+  const groups = new Map();
+  for (const c of controlsView.controls || []) {
+    if (!groups.has(c.device)) groups.set(c.device, []);
+    groups.get(c.device).push(c);
+  }
+  const box = $('controls');
+  box.replaceChildren();
+  for (const [device, controls] of groups) {
+    const card = el('article', 'card');
+    const head = el('div', 'card-head');
+    const ic = el('div', 'card-icon'); ic.append(icon(iconFor(device)));
+    const titles = el('div');
+    titles.append(el('div', 'card-title', device),
+        el('div', 'card-sub', !controlsView.enabled ? 'View only' : controlPin ? 'Unlocked' : 'Locked · PIN needed to change'));
+    head.append(ic, titles);
+    card.append(head);
+    for (const c of controls) card.append(controlRow(c));
+    box.append(card);
+  }
+}
+
+function controlRow(c) {
+  const row = el('div', 'control');
+  const actions = el('div', 'control-actions');
+  const disabled = !controlsView.enabled;
+  const button = (text, onClick, extra = '') => {
+    const b = el('button', 'btn small ' + extra, text);
+    b.type = 'button';
+    b.disabled = disabled;
+    b.onclick = onClick;
+    return b;
+  };
+
+  if (c.kind === 'number') {
+    const unit = c.unit ? ' ' + c.unit : '';
+    const select = el('select');
+    select.disabled = disabled;
+    select.setAttribute('aria-label', c.label);
+    for (const v of numberValues(c)) {
+      const o = el('option', '', v + unit);
+      o.value = v;
+      if (Number(c.value) === v) o.selected = true;
+      select.append(o);
+    }
+    actions.append(select, button('Set', () => {
+      if (Number(select.value) === Number(c.value)) return toast(c.label + ' is already ' + c.value + unit + '.');
+      if (confirm('Set ' + c.label.toLowerCase() + ' to ' + select.value + unit + '?')) sendCommand(c, select.value);
+    }));
+  } else if (c.kind === 'switch') {
+    const on = c.value === 'on';
+    actions.append(button(on ? 'On' : 'Off', () => {
+      const next = on ? 'off' : 'on';
+      if (confirm('Turn ' + c.label.toLowerCase() + ' ' + next + '?')) sendCommand(c, next);
+    }, on ? 'on' : ''));
+  } else if (c.kind === 'cycle') {
+    const seg = el('div', 'seg');
+    for (const option of ['run', 'pause', 'stop'].filter(o => c.options.includes(o))) {
+      seg.append(button(CYCLE_VERBS[option], () => {
+        if (confirm(CYCLE_VERBS[option] + ' the ' + c.device.toLowerCase() + '?')) sendCommand(c, option);
+      }, c.value === option ? 'on' : ''));
+    }
+    actions.append(seg);
+  } else if (c.kind === 'select') {
+    const select = el('select');
+    select.disabled = disabled;
+    select.setAttribute('aria-label', c.label);
+    for (const option of c.options) {
+      const o = el('option', '', optionLabel(option));
+      o.value = option;
+      if (c.value === option) o.selected = true;
+      select.append(o);
+    }
+    actions.append(select, button('Set', () => {
+      if (select.value === c.value) return toast(c.label + ' is already ' + optionLabel(c.value).toLowerCase() + '.');
+      if (confirm('Set ' + c.label.toLowerCase() + ' to ' + optionLabel(select.value).toLowerCase() + '?')) sendCommand(c, select.value);
+    }));
+  } else if (c.kind === 'button') {
+    actions.append(button('Press', () => {
+      if (confirm(c.label + '?')) sendCommand(c, '');
+    }));
+  }
+
+  row.append(el('span', 'label', c.label), actions);
+  if (c.note) row.append(el('span', 'note', c.note));
+  return row;
+}
+
+async function sendCommand(c, value) {
+  if (!await ensureUnlocked()) return;
+  try {
+    const res = await fetch('/api/controls/' + encodeURIComponent(c.id), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', [PIN_HEADER]: controlPin },
+      body: JSON.stringify({ value })
+    });
+    const body = await res.json().catch(() => ({}));
+    if (res.status === 401 || res.status === 429 || res.status === 403) lockControls();
+    if (!res.ok) return toast(body.message || 'That didn\'t work (HTTP ' + res.status + ').', true);
+    toast(body.message || 'Done.');
+    keepUnlocked();
+    setTimeout(loadControls, 1500);   // give the device a moment, then show its new state
+  } catch (err) {
+    toast('HomeHub is not reachable.', true);
+  }
+}
+
+/** Resolves true once the PIN has been accepted (asking for it if needed), false if the user cancels. */
+function ensureUnlocked() {
+  if (controlPin) return Promise.resolve(true);
+  $('pinError').textContent = '';
+  $('pinInput').value = '';
+  $('pinDialog').showModal();
+  $('pinInput').focus();
+  return new Promise(resolve => { pinResolve = resolve; });
+}
+
+function closePinDialog(result) {
+  $('pinDialog').close();
+  if (pinResolve) pinResolve(result);
+  pinResolve = null;
+}
+
+$('pinForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  const attempt = $('pinInput').value;
+  try {
+    const res = await fetch('/api/controls/unlock', { method: 'POST', headers: { [PIN_HEADER]: attempt } });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      $('pinError').textContent = body.message || 'Could not check the PIN.';
+      $('pinInput').select();
+      return;
+    }
+    controlPin = attempt;
+    keepUnlocked();
+    renderControls();
+    closePinDialog(true);
+  } catch (err) {
+    $('pinError').textContent = 'HomeHub is not reachable.';
+  }
+});
+$('pinCancel').addEventListener('click', () => closePinDialog(false));
+$('pinDialog').addEventListener('cancel', () => { if (pinResolve) pinResolve(false); pinResolve = null; });
+
+$('lockBtn').addEventListener('click', () => {
+  if (controlPin) lockControls();
+  else ensureUnlocked();
+});
+
+function keepUnlocked() {
+  clearTimeout(lockTimer);
+  lockTimer = setTimeout(lockControls, AUTO_LOCK_MS);
+}
+
+function lockControls() {
+  controlPin = null;
+  clearTimeout(lockTimer);
+  renderControls();
+}
+
+let toastTimer = null;
+function toast(message, isError = false) {
+  const t = $('toast');
+  t.textContent = message;
+  t.className = 'toast' + (isError ? ' error' : '');
+  t.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.hidden = true; }, isError ? 6000 : 3500);
 }
 
 function connect() {
