@@ -40,6 +40,10 @@ class ProdProfileTests {
         assertThat(prod.getProperty("homeassistant.token")).isEqualTo("token-from-systemd-credential");
         assertThat(prod.getProperty("homehub.connectors.homeassistant.enabled")).isEqualTo("true");
         assertThat(prod.getProperty("homehub.connectors.fake.enabled")).isEqualTo("false");
+        // Alerts go to the phone on the hub only, and tapping one opens the hub's dashboard.
+        assertThat(prod.getProperty("homehub.alerts.enabled")).isEqualTo("true");
+        assertThat(prod.getProperty("homehub.alerts.send-to")).isEqualTo("notify.mobile_app_purushphone");
+        assertThat(prod.getProperty("homehub.alerts.link")).isEqualTo("http://192.168.5.251:8080");
 
         // Same entity list as the default configuration.
         StandardEnvironment dev = load(home, creds);
