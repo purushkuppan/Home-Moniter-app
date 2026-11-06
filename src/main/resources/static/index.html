@@ -115,6 +115,8 @@
   .reading { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; border-top: 1px dashed var(--border); }
   .reading:first-of-type { border-top: 0; }
   .reading .label { color: var(--muted); font-size: 13px; }
+  .reading-text { display: flex; flex-direction: column; line-height: 1.3; }
+  .reading .since { font-size: 11px; color: var(--muted); opacity: .8; }
   .empty-card { color: var(--muted); padding: 24px; text-align: center; grid-column: 1 / -1; }
 
   /* Badges */
@@ -244,8 +246,12 @@ const ICONS = {
 const dayFormat = new Intl.DateTimeFormat(undefined, { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' });
 const clockFormat = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit', second: '2-digit' });
 const relative = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+const shortClock = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
+const weekdayClock = new Intl.DateTimeFormat(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+const dateClock = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
-let events = [];
+let events = [];    // latest 50 events, for the activity table
+let current = [];   // last value of every reading, for the status cards
 let lastSeenId = null;
 let activeType = 'all';
 let paused = false;
@@ -321,16 +327,43 @@ function splitDevice(device) {
   return i < 0 ? { main: device, part: '' } : { main: device.slice(0, i), part: device.slice(i + 1) };
 }
 
+/** "4:51 PM" today, "Wed 10:48 PM" this week, otherwise "Oct 28, 10:48 PM". */
+function sinceText(date) {
+  const now = new Date();
+  if (date.toDateString() === now.toDateString()) return shortClock.format(date);
+  if (now - date < 6 * 86400000) return weekdayClock.format(date);
+  return dateClock.format(date);
+}
+
+/** Keeps `current` (last value of every reading) up to date with a newly saved event. */
+function updateCurrent(e) {
+  const key = readingKey(e);
+  const i = current.findIndex(x => readingKey(x) === key);
+  if (i < 0) current.push(e);
+  else if (e.id > current[i].id) current[i] = e;
+}
+
+function readingKey(e) {
+  return (e.device + '|' + e.type).toLowerCase();   // "freezer" and "Freezer" are the same reading
+}
+
 function renderCards() {
   const cards = $('cards');
-  // Newest value per device + type. Events arrive newest first.
+  // The last value of every reading, however old: from /api/events/latest plus live updates.
   const devices = new Map();
-  for (const e of events) {
+  for (const e of [...current].sort((a, b) => b.id - a.id)) {
     const { main, part } = splitDevice(e.device);
-    if (!devices.has(main)) devices.set(main, { name: main, readings: new Map(), updated: new Date(e.time) });
-    const key = ((part ? part + ' ' : '') + e.type).toLowerCase();   // "freezer" and "Freezer" are the same reading
-    const readings = devices.get(main).readings;
-    if (!readings.has(key)) readings.set(key, { label: (part ? prettyType(part) + ' · ' : '') + prettyType(e.type).toLowerCase(), type: e.type, value: e.value });
+    const time = new Date(e.time);
+    if (!devices.has(main)) devices.set(main, { name: main, readings: new Map(), updated: time });
+    const device = devices.get(main);
+    if (time > device.updated) device.updated = time;
+    const key = ((part ? part + ' ' : '') + e.type).toLowerCase();
+    if (!device.readings.has(key)) {
+      device.readings.set(key, {
+        label: (part ? prettyType(part) + ' · ' : '') + prettyType(e.type).toLowerCase(),
+        type: e.type, value: e.value, time
+      });
+    }
   }
 
   cards.replaceChildren();
@@ -348,7 +381,11 @@ function renderCards() {
     card.append(head);
     for (const r of [...d.readings.values()].sort((a, b) => a.label.localeCompare(b.label))) {
       const row = el('div', 'reading');
-      row.append(el('span', 'label', r.label.charAt(0).toUpperCase() + r.label.slice(1)), badge(r.type, r.value));
+      const text = el('div', 'reading-text');
+      const since = el('span', 'since', 'since ' + sinceText(r.time));
+      since.title = dayFormat.format(r.time) + ', ' + clockFormat.format(r.time) + ' (' + timeAgo(r.time) + ')';
+      text.append(el('span', 'label', r.label.charAt(0).toUpperCase() + r.label.slice(1)), since);
+      row.append(text, badge(r.type, r.value));
       card.append(row);
     }
     cards.append(card);
@@ -424,9 +461,14 @@ function renderAll(newIds) {
 /** Full reload of the latest 50 events. Used at start, after every reconnect and as a slow safety net. */
 async function load() {
   try {
-    const res = await fetch('/api/events', { cache: 'no-store' });
+    const [res, latestRes] = await Promise.all([
+      fetch('/api/events', { cache: 'no-store' }),
+      fetch('/api/events/latest', { cache: 'no-store' })
+    ]);
     if (!res.ok) throw new Error('HTTP ' + res.status);
+    if (!latestRes.ok) throw new Error('HTTP ' + latestRes.status);
     events = await res.json();
+    current = await latestRes.json();
 
     const newIds = new Set(lastSeenId === null ? [] : events.filter(e => e.id > lastSeenId).map(e => e.id));
     if (events.length) lastSeenId = Math.max(lastSeenId ?? 0, ...events.map(e => e.id));
@@ -442,6 +484,7 @@ async function load() {
 function addLiveEvent(e) {
   if (events.some(x => x.id === e.id)) return;
   events = [e, ...events].sort((a, b) => b.id - a.id).slice(0, MAX_EVENTS);
+  updateCurrent(e);
   lastSeenId = Math.max(lastSeenId ?? 0, e.id);
   renderAll(new Set([e.id]));
   setStatus('Live', '', clockFormat.format(new Date()));
