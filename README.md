@@ -47,6 +47,8 @@ Non-secret settings live in [`src/main/resources/application.properties`](src/ma
 | `homehub.alerts.finished` | `Washer,Dryer` | Machines to report when their cycle ends |
 | `homehub.alerts.offline.[device]` | Refrigerator `30m` | How long all of a device's readings may be unavailable before it is reported offline |
 | `homehub.alerts.connection-lost-after` | `10m` | How long Home Assistant may be unreachable before the dashboard says so |
+| `homehub.weather.entity` | `weather.home` | Home Assistant weather entity for the dashboard card; empty = no card |
+| `homehub.weather.refresh` | `10m` | How long the weather is kept before asking Home Assistant again |
 
 Any of these can be overridden on the command line, for example
 `.\mvnw.cmd spring-boot:run "-Dspring-boot.run.arguments=--homehub.connectors.fake.enabled=false --homehub.connectors.homeassistant.enabled=true"`.
@@ -72,6 +74,15 @@ HomeHub warns when something needs attention. Details and trade-offs: [ADR 5](do
 - A problem that was already reported (a door, an offline device) is not reported again after a restart.
 - A quiet device is not offline: readings are only stored when they change, so the offline rule uses Home
   Assistant's "unavailable". If the hub itself loses power or Wi-Fi, nothing can be sent; see [ADR 7](docs/adr/0007-offline-and-connection-alerts.md).
+
+## Weather
+
+The Status section starts with the weather: now (condition, temperature, humidity, wind) and today plus the
+next two days (high/low, rain amount when some is expected). It comes from Home Assistant's weather entity
+(`weather.home`, from **met.no**, set up by Home Assistant itself): no API key, no extra service, no cost, and
+met.no allows commercial use with the credit line shown under the card. Kudil reads it on demand and keeps it
+for 10 minutes; weather is not stored as events. If Home Assistant can't be reached, the last result is shown
+with its time.
 
 ## Secrets
 
