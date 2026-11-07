@@ -54,8 +54,10 @@ healthy() {
 
 if healthy; then
   echo "HomeHub $VERSION is up."
-  # Keep the five newest releases.
-  ls -1dt "$BASE"/releases/v* | tail -n +6 | xargs -r rm -rf
+  # Keep the five newest releases, and never the one that is running.
+  find "$BASE/releases" -mindepth 1 -maxdepth 1 -type d -name 'v*' -printf '%T@ %p\n' \
+    | sort -rn | tail -n +6 | cut -d' ' -f2- | grep -vxF "$REL" \
+    | xargs -r -d '\n' rm -rf -- || true   # grep finds nothing when there are 5 releases or fewer
   exit 0
 fi
 
