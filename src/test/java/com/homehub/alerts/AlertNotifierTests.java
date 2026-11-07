@@ -38,7 +38,7 @@ class AlertNotifierTests {
                     .andExpect(method(HttpMethod.POST))
                     .andExpect(header("Authorization", "Bearer secret"))
                     .andExpect(content().json("""
-                            {"title":"HomeHub","message":"Fridge door has been open for 1 minute",
+                            {"title":"Kudil","message":"Fridge door has been open for 1 minute",
                              "data":{"tag":"homehub-door:refrigerator/fridge","group":"homehub",
                                      "url":"http://hub:8080","clickAction":"http://hub:8080"}}"""))
                     .andRespond(withSuccess());

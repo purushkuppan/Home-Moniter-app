@@ -46,6 +46,8 @@ class EventControllerTests {
                 HttpResponse.BodyHandlers.ofString());
         assertThat(page.statusCode()).isEqualTo(200);
         assertThat(page.headers().firstValue("Cache-Control")).hasValueSatisfying(v -> assertThat(v).contains("no-cache"));
+        // Users see the product name; HomeHub is only the code name.
+        assertThat(page.body()).contains("<title>Kudil</title>", "<h1>Kudil</h1>").doesNotContain("HomeHub is not reachable");
         // Every file in the jar is dated 1980; with a Last-Modified header, browsers holding an old copy would be told
         // "not modified" after every deploy.
         assertThat(page.headers().firstValue("Last-Modified")).isEmpty();

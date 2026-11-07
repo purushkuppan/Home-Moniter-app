@@ -32,7 +32,7 @@ public class AlertNotifier {
 
     private static final Logger log = LoggerFactory.getLogger(AlertNotifier.class);
     private static final Pattern TARGET = Pattern.compile("notify\\.[a-z0-9_]+");
-    private static final String TITLE = "HomeHub";
+    private static final String TITLE = "Kudil";   // product name shown on phones
 
     private final RestClient client;
     private final boolean configured;
