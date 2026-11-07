@@ -45,7 +45,7 @@ class AlertRulesTests {
 
         assertThat(rules.onEvent(event("Refrigerator/Fridge", "contact", "closed", sec(200))))
                 .extracting(Alert::key, Alert::level, Alert::message)
-                .containsExactly(tuple("door:refrigerator/fridge", Level.CLEARED, "Fridge door closed after 3 minutes"));
+                .containsExactly(tuple("door:refrigerator/fridge", Level.CLEARED, "Fridge door closed. It was open for 3 min 20 s."));
         assertThat(rules.active()).isEmpty();
     }
 
@@ -137,6 +137,24 @@ class AlertRulesTests {
                 .containsExactly("Fridge door has been open for 5 minutes");
         assertThat(rules.onEvent(event("Washer", "machineState", "stop", Duration.ofMinutes(11))))
                 .extracting(Alert::message).containsExactly("Washer finished");
+    }
+
+    @Test
+    void freezerAllClearUsesTheSameWording() {
+        rules.onEvent(event("Refrigerator/Freezer", "contact", "open", sec(0)));
+        rules.check(T0.plus(sec(125)));
+        assertThat(rules.onEvent(event("Refrigerator/Freezer", "contact", "closed", Duration.ofMinutes(12))))
+                .extracting(Alert::message).containsExactly("Freezer door closed. It was open for 12 minutes.");
+    }
+
+    @Test
+    void doorOpenTimeIsExactForShortOpenings() {
+        assertThat(AlertRules.openFor(sec(45))).isEqualTo("45 s");
+        assertThat(AlertRules.openFor(sec(110))).isEqualTo("1 min 50 s");
+        assertThat(AlertRules.openFor(Duration.ofMinutes(3))).isEqualTo("3 min");
+        assertThat(AlertRules.openFor(sec(599))).isEqualTo("9 min 59 s");
+        assertThat(AlertRules.openFor(Duration.ofMinutes(12))).isEqualTo("12 minutes");
+        assertThat(AlertRules.openFor(Duration.ofMinutes(65))).isEqualTo("1 hour 5 minutes");
     }
 
     @Test

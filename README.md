@@ -55,7 +55,7 @@ HomeHub warns when something needs attention. Details and trade-offs: [ADR 5](do
 
 | Alert | When | Afterwards |
 |---|---|---|
-| Door left open | Fridge door open 1 minute, freezer door 2 minutes | "Fridge door closed after 3 minutes" |
+| Door left open | Fridge door open 1 minute, freezer door 2 minutes | "Fridge door closed. It was open for 3 min." |
 | Too warm | Fridge above 45 °F or freezer above 10 °F for 15 minutes | "Fridge temperature is back to normal" |
 | Cycle finished | Washer or dryer ends its cycle | – |
 

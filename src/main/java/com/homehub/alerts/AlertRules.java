@@ -99,7 +99,8 @@ final class AlertRules {
                     Watch w = openDoors.remove(device);
                     if (w != null && w.message != null) {
                         return List.of(new Alert("door:" + device, Level.CLEARED, w.device,
-                                name(w.device) + " door closed after " + human(Duration.between(w.since, time)), time));
+                                name(w.device) + " door closed. It was open for "
+                                        + openFor(Duration.between(w.since, time)) + ".", time));
                     }
                 }
                 // "unavailable" and the like say nothing about the door: keep watching.
@@ -199,6 +200,18 @@ final class AlertRules {
         if (minutes < 60) return plural(minutes, "minute");
         long rest = minutes % 60;
         return plural(minutes / 60, "hour") + (rest == 0 ? "" : " " + plural(rest, "minute"));
+    }
+
+    /**
+     * How long a door was open, for its all-clear. Short openings are exact: 0:45 -> "45 s", 1:50 -> "1 min 50 s",
+     * 3:00 -> "3 min". From 10 minutes on, the same wording as {@link #human}: "12 minutes", "1 hour 5 minutes".
+     */
+    static String openFor(Duration d) {
+        long seconds = Math.max(0, d.toSeconds());
+        if (seconds >= 600) return human(d);
+        long minutes = seconds / 60, rest = seconds % 60;
+        if (minutes == 0) return rest + " s";
+        return minutes + " min" + (rest == 0 ? "" : " " + rest + " s");
     }
 
     private static String plural(long n, String word) {
