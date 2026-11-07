@@ -18,6 +18,10 @@ jobs:
           distribution: temurin
           java-version: '25'
           cache: maven
+      - name: Check the hub scripts
+        # They run as root on the live hub, so a typo must fail the PR, not the deploy.
+        # ShellCheck (GPL-3.0) is preinstalled on the GitHub runner; it is a CI tool, not part of the app.
+        run: shellcheck deploy/*.sh
       - name: Build and test
         run: bash ./mvnw -B -ntp verify
       - name: Keep the jar for 7 days

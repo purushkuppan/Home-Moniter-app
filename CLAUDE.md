@@ -13,6 +13,9 @@ Ubuntu Server 26.04) and may become a product later.
 - Connectors implement `DeviceConnector` and are scheduled by `ConnectorScheduler`
 
 ## Commands
+- Release: push a tag `vX.Y.Z` from `main`. GitHub Actions builds it, and the self-hosted runner on `home-hub`
+  deploys it with a health check and rollback. Fallback: `.\deploy.ps1 -Version vX.Y.Z`.
+  The repository must stay **private** while a self-hosted runner is attached.
 - Build and test: `./mvnw -B verify` (Windows: `mvnw.cmd -B verify`)
 - Run locally: `./mvnw spring-boot:run` → http://localhost:8080
 - Production profile: `--spring.profiles.active=prod` (data in `/opt/homehub/data`)
