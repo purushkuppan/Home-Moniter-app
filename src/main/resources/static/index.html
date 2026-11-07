@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>HomeHub</title>
+<title>Kudil</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%234f46e5' d='M12 3 2 11h3v9h5v-6h4v6h5v-9h3z'/%3E%3C/svg%3E">
 <style>
   :root {
@@ -277,7 +277,7 @@
   <div class="wrap">
     <div class="logo"><svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3 2 11h3v9h5v-6h4v6h5v-9h3z"/></svg></div>
     <div class="brand">
-      <h1>HomeHub</h1>
+      <h1>Kudil</h1>
       <p>Home appliance monitor</p>
     </div>
     <div class="live" id="live"><span class="dot"></span><span id="status">Connecting…</span></div>
@@ -810,7 +810,7 @@ async function sendCommand(c, value) {
     keepUnlocked();
     setTimeout(loadControls, 1500);   // give the device a moment, then show its new state
   } catch (err) {
-    toast('HomeHub is not reachable.', true);
+    toast('Kudil is not reachable.', true);
   }
 }
 
@@ -846,7 +846,7 @@ $('pinForm').addEventListener('submit', async event => {
     renderControls();
     closePinDialog(true);
   } catch (err) {
-    $('pinError').textContent = 'HomeHub is not reachable.';
+    $('pinError').textContent = 'Kudil is not reachable.';
   }
 });
 $('pinCancel').addEventListener('click', () => closePinDialog(false));

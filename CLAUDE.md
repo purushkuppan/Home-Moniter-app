@@ -1,5 +1,7 @@
 # HomeHub – instructions for AI agents
 
+Kudil: Family Home Monitor is the product name; HomeHub is the internal code name used in code, packages, the `homehub` service and `homehub.db`.
+
 HomeHub is a home monitoring app: connectors poll smart devices, events are stored in SQLite,
 and a live dashboard shows them with alerts. It runs on a 4 GB always-on laptop (`home-hub`,
 Ubuntu Server 26.04) and may become a product later.
@@ -29,6 +31,8 @@ Ubuntu Server 26.04) and may become a product later.
 7. Small, focused PRs. Commit messages in the form `feat:`, `fix:`, `chore:`, `docs:`, `test:`.
 8. Do not change `deploy/` scripts or the systemd unit without saying so clearly in the PR,
    because they run on the live hub with root privileges.
+9. User-facing text (dashboard, notifications, messages) says **Kudil**. Code identifiers stay HomeHub
+   (packages, classes, properties, the `X-HomeHub-Pin` header, the `homehub` service and `homehub.db`).
 
 ## Definition of done
 Tests pass in CI, the PR is reviewed and merged, the release is deployed to `home-hub`,

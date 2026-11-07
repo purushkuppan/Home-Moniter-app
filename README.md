@@ -1,5 +1,7 @@
 # HomeHub
 
+Kudil: Family Home Monitor is the product name; HomeHub is the internal code name used in code, packages, the `homehub` service and `homehub.db`.
+
 A small home-appliance monitor. A Spring Boot app reads smart devices through Home Assistant,
 stores state changes in SQLite, and shows them on a live web dashboard at http://localhost:8080.
 
