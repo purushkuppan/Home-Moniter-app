@@ -23,6 +23,9 @@ import java.util.regex.Pattern;
  *   <li>A door that stays open longer than its limit, and "closed" once it shuts again.</li>
  *   <li>A temperature above its limit for longer than {@code tooWarmFor}, and "back to normal" afterwards.</li>
  *   <li>A washer or dryer whose cycle ends (job state "finish(ed)", or the machine going from run/pause to stop).</li>
+ *   <li>A device whose readings are <em>all</em> "unavailable" for longer than its limit, and "back online" afterwards.
+ *       A quiet device is not offline: readings are only stored when they change.</li>
+ *   <li>Home Assistant unreachable for longer than {@code connectionLostAfter}, and "back now" afterwards.</li>
  * </ul>
  * Each problem is reported once. No I/O and no clock of its own, so it is easy to test; thread-safe.
  * Device names are compared without regard to case.
@@ -33,11 +36,14 @@ final class AlertRules {
     private static final Set<String> JOB_DONE = Set.of("finish", "finished");
     /** "44 F", "-3.5 C", "38" */
     private static final Pattern READING = Pattern.compile("(-?\\d+(?:\\.\\d+)?)\\s*([A-Za-z]*)");
+    private static final String HOME_ASSISTANT = "Home Assistant";
 
     private final Map<String, Duration> doorLimits = new HashMap<>();
     private final Map<String, Double> warmLimits = new HashMap<>();
     private final Duration warmFor;
     private final Set<String> machines = new HashSet<>();
+    private final Map<String, Duration> offlineLimits = new HashMap<>();   // by main device: "refrigerator"
+    private final Duration connectionLostAfter;
 
     /** A door that is open, or a reading that is too warm: since when, and whether the alert has gone out. */
     private static final class Watch {
@@ -55,12 +61,18 @@ final class AlertRules {
     private final Map<String, Watch> openDoors = new LinkedHashMap<>();
     private final Map<String, Watch> tooWarm = new LinkedHashMap<>();
     private final Set<String> running = new HashSet<>();
+    /** Per main device: whether each of its readings (device + type) is "unavailable" right now. */
+    private final Map<String, Map<String, Boolean>> unavailable = new HashMap<>();
+    private final Map<String, Watch> offline = new LinkedHashMap<>();
+    private Watch connectionLost;   // null while Home Assistant is reachable
 
     AlertRules(AlertProperties properties) {
         properties.doorOpen().forEach((device, limit) -> doorLimits.put(key(device), limit));
         properties.tooWarm().forEach((device, limit) -> warmLimits.put(key(device), limit));
         this.warmFor = properties.tooWarmFor();
         properties.finished().forEach(device -> machines.add(key(device)));
+        properties.offline().forEach((device, limit) -> offlineLimits.put(key(device), limit));
+        this.connectionLostAfter = properties.connectionLostAfter();
     }
 
     /**
@@ -75,7 +87,7 @@ final class AlertRules {
                     if (Level.PROBLEM.eventType.equals(e.type())) lastAlert.put(key(e.device()), e);
                     else onEvent(e);
                 });
-        for (Map<String, Watch> watches : List.of(openDoors, tooWarm)) {
+        for (Map<String, Watch> watches : List.of(openDoors, tooWarm, offline)) {
             watches.forEach((device, w) -> {
                 Event alert = lastAlert.get(device);
                 if (alert != null && alert.time() != null && !alert.time().isBefore(w.since)) w.message = alert.value();
@@ -86,10 +98,44 @@ final class AlertRules {
     /** A reading was saved. Returns what to tell people right away (an "all clear", or a finished cycle). */
     synchronized List<Alert> onEvent(Event e) {
         if (e.device() == null || e.type() == null || Alert.EVENT_TYPES.contains(e.type())) return List.of();
-        String device = key(e.device());
         String value = e.value() == null ? "" : e.value().trim().toLowerCase(Locale.ROOT);
         Instant time = e.time() != null ? e.time() : Instant.now();
+        List<Alert> now = new ArrayList<>(availability(e, value, time));
+        now.addAll(readingRules(e, value, time));
+        return now;
+    }
 
+    /** Home Assistant became reachable or unreachable. Returns the "back now" message after a reported outage. */
+    synchronized List<Alert> onConnection(boolean reachable, Instant time) {
+        if (!reachable) {
+            if (connectionLost == null) connectionLost = new Watch(HOME_ASSISTANT, time);
+            return List.of();
+        }
+        Watch w = connectionLost;
+        connectionLost = null;
+        if (w == null || w.message == null) return List.of();   // a short blip: nobody was told, nothing to clear
+        return List.of(new Alert(Alert.CONNECTION_KEY, Level.CLEARED, HOME_ASSISTANT,
+                "Kudil lost Home Assistant for " + openFor(Duration.between(w.since, time)) + ". Back now.", time));
+    }
+
+    /** Tracks whether every reading of a watched device is "unavailable" (offline) or not. */
+    private List<Alert> availability(Event e, String value, Instant time) {
+        String main = mainKey(e.device());
+        if (!offlineLimits.containsKey(main) || "command".equals(e.type())) return List.of();
+        Map<String, Boolean> readings = unavailable.computeIfAbsent(main, k -> new HashMap<>());
+        readings.put(key(e.device()) + "|" + e.type(), value.equals("unavailable"));
+        if (!readings.containsValue(false)) {   // everything this device reports is unavailable
+            offline.putIfAbsent(main, new Watch(mainName(e.device()), time));
+            return List.of();
+        }
+        Watch w = offline.remove(main);
+        if (w == null || w.message == null) return List.of();
+        return List.of(new Alert("offline:" + main, Level.CLEARED, w.device,
+                w.device + " is back online. It was offline for " + openFor(Duration.between(w.since, time)) + ".", time));
+    }
+
+    private List<Alert> readingRules(Event e, String value, Instant time) {
+        String device = key(e.device());
         switch (e.type()) {
             case "contact" -> {
                 if (!doorLimits.containsKey(device)) break;
@@ -152,6 +198,17 @@ final class AlertRules {
                 due.add(new Alert("warm:" + device, Level.PROBLEM, w.device, w.message, now));
             }
         });
+        offline.forEach((device, w) -> {
+            if (w.message == null && !now.isBefore(w.since.plus(offlineLimits.get(device)))) {
+                w.message = w.device + " is offline. No data for " + human(Duration.between(w.since, now)) + ".";
+                due.add(new Alert("offline:" + device, Level.PROBLEM, w.device, w.message, now));
+            }
+        });
+        Watch lost = connectionLost;
+        if (lost != null && lost.message == null && !now.isBefore(lost.since.plus(connectionLostAfter))) {
+            lost.message = "Can't reach Home Assistant. No contact for " + human(Duration.between(lost.since, now)) + ".";
+            due.add(new Alert(Alert.CONNECTION_KEY, Level.PROBLEM, HOME_ASSISTANT, lost.message, now));
+        }
         return due;
     }
 
@@ -164,6 +221,13 @@ final class AlertRules {
         tooWarm.forEach((device, w) -> {
             if (w.message != null) active.add(new Alert("warm:" + device, Level.PROBLEM, w.device, w.message, w.since));
         });
+        offline.forEach((device, w) -> {
+            if (w.message != null) active.add(new Alert("offline:" + device, Level.PROBLEM, w.device, w.message, w.since));
+        });
+        if (connectionLost != null && connectionLost.message != null) {
+            active.add(new Alert(Alert.CONNECTION_KEY, Level.PROBLEM, HOME_ASSISTANT, connectionLost.message,
+                    connectionLost.since));
+        }
         active.sort(Comparator.comparing(Alert::time));
         return active;
     }
@@ -174,6 +238,16 @@ final class AlertRules {
 
     private static String key(String device) {
         return device.trim().toLowerCase(Locale.ROOT);
+    }
+
+    /** "Refrigerator/Fridge" -> "Refrigerator" */
+    private static String mainName(String device) {
+        int slash = device.indexOf('/');
+        return (slash < 0 ? device : device.substring(0, slash)).trim();
+    }
+
+    private static String mainKey(String device) {
+        return key(mainName(device));
     }
 
     /** "Refrigerator/Fridge" -> "Fridge", "Washer" -> "Washer" */

@@ -2,10 +2,12 @@ package com.homehub.alerts;
 
 import com.homehub.events.Event;
 import com.homehub.events.EventRepository;
+import com.homehub.homeassistant.HomeAssistantStatus;
 import jakarta.annotation.PreDestroy;
 import java.time.Clock;
 import java.util.List;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
@@ -29,6 +31,7 @@ public class AlertService {
 
     private static final Logger log = LoggerFactory.getLogger(AlertService.class);
     static final long CHECK_EVERY_SECONDS = 10;
+    static final long PHONE_DELAY_AFTER_RECONNECT_SECONDS = 30;
 
     private final AlertRules rules;
     private final EventRepository repository;
@@ -58,13 +61,27 @@ public class AlertService {
     @EventListener
     public void onEventSaved(Event event) {
         if (Alert.EVENT_TYPES.contains(event.type())) return;   // our own alerts
-        worker.execute(() -> {
-            try {
-                raise(rules.onEvent(event));
-            } catch (RuntimeException ex) {
-                log.warn("Alerts: failed to handle an event ({})", ex.getClass().getSimpleName());
-            }
-        });
+        work(() -> raise(rules.onEvent(event)));
+    }
+
+    /** Called by Spring when the Home Assistant connector loses or regains Home Assistant. */
+    @EventListener
+    public void onConnection(HomeAssistantStatus status) {
+        work(() -> raise(rules.onConnection(status.reachable(), status.time())));
+    }
+
+    private void work(Runnable task) {
+        try {
+            worker.execute(() -> {
+                try {
+                    task.run();
+                } catch (RuntimeException ex) {
+                    log.warn("Alerts: failed to handle a change ({})", ex.getClass().getSimpleName());
+                }
+            });
+        } catch (RejectedExecutionException ex) {
+            // shutting down
+        }
     }
 
     /** Problems that were reported and are still going on, for the dashboard banner. */
@@ -85,7 +102,13 @@ public class AlertService {
         for (Alert alert : alerts) {
             log.info("Alert: {}", alert.message());
             repository.save(new Event(null, alert.device(), alert.level().eventType, alert.message(), alert.time()));
-            notifier.send(alert);
+            if (!alert.reachesPhone()) continue;   // dashboard only
+            if (Alert.CONNECTION_KEY.equals(alert.key())) {
+                // Home Assistant just came back: give its phone notifications a moment to load before sending.
+                worker.schedule(() -> notifier.send(alert), PHONE_DELAY_AFTER_RECONNECT_SECONDS, TimeUnit.SECONDS);
+            } else {
+                notifier.send(alert);
+            }
         }
     }
 

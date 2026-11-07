@@ -45,6 +45,8 @@ Non-secret settings live in [`src/main/resources/application.properties`](src/ma
 | `homehub.alerts.too-warm.[device]` | Fridge `45`, Freezer `10` | Highest normal temperature (in the reading's unit) |
 | `homehub.alerts.too-warm-for` | `15m` | How long a temperature must stay too high |
 | `homehub.alerts.finished` | `Washer,Dryer` | Machines to report when their cycle ends |
+| `homehub.alerts.offline.[device]` | Refrigerator `30m` | How long all of a device's readings may be unavailable before it is reported offline |
+| `homehub.alerts.connection-lost-after` | `10m` | How long Home Assistant may be unreachable before the dashboard says so |
 
 Any of these can be overridden on the command line, for example
 `.\mvnw.cmd spring-boot:run "-Dspring-boot.run.arguments=--homehub.connectors.fake.enabled=false --homehub.connectors.homeassistant.enabled=true"`.
@@ -58,6 +60,8 @@ HomeHub warns when something needs attention. Details and trade-offs: [ADR 5](do
 | Door left open | Fridge door open 1 minute, freezer door 2 minutes | "Fridge door closed. It was open for 3 min." |
 | Too warm | Fridge above 45 °F or freezer above 10 °F for 15 minutes | "Fridge temperature is back to normal" |
 | Cycle finished | Washer or dryer ends its cycle | – |
+| Device offline | All of the refrigerator's readings "unavailable" in Home Assistant for 30 minutes | "Refrigerator is back online. It was offline for 42 minutes." |
+| Home Assistant unreachable | No contact for 10 minutes. **Dashboard only**: phones are reached through Home Assistant | Phone: "Kudil lost Home Assistant for 25 minutes. Back now." |
 
 - **Dashboard:** a red banner shows problems still going on. Every alert is listed in the activity list
   (Alert, All clear, Notice).
@@ -65,7 +69,9 @@ HomeHub warns when something needs attention. Details and trade-offs: [ADR 5](do
   then add its notify action (Home Assistant: Settings › Tools › Actions, search `mobile_app`) to
   `homehub.alerts.send-to`. Tapping a notification opens the dashboard (on the home network). The "all clear"
   replaces the earlier notification.
-- A door that was already reported is not reported again after a restart.
+- A problem that was already reported (a door, an offline device) is not reported again after a restart.
+- A quiet device is not offline: readings are only stored when they change, so the offline rule uses Home
+  Assistant's "unavailable". If the hub itself loses power or Wi-Fi, nothing can be sent; see [ADR 7](docs/adr/0007-offline-and-connection-alerts.md).
 
 ## Secrets
 

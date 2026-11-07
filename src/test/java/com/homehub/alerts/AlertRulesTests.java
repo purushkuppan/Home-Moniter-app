@@ -19,7 +19,9 @@ class AlertRulesTests {
             Map.of("Refrigerator/Fridge", Duration.ofMinutes(1), "Refrigerator/Freezer", Duration.ofMinutes(2)),
             Map.of("Refrigerator/Fridge", 45.0, "Refrigerator/Freezer", 10.0),
             Duration.ofMinutes(15),
-            List.of("Washer", "Dryer"));
+            List.of("Washer", "Dryer"),
+            Map.of("Refrigerator", Duration.ofMinutes(30)),
+            Duration.ofMinutes(10));
 
     private final AlertRules rules = new AlertRules(SETTINGS);
     private long nextId = 1;
@@ -155,6 +157,106 @@ class AlertRulesTests {
         assertThat(AlertRules.openFor(sec(599))).isEqualTo("9 min 59 s");
         assertThat(AlertRules.openFor(Duration.ofMinutes(12))).isEqualTo("12 minutes");
         assertThat(AlertRules.openFor(Duration.ofMinutes(65))).isEqualTo("1 hour 5 minutes");
+    }
+
+    // ------------------------------------------------------------ offline devices
+
+    /** The fridge's four readings, as the hub stores them. */
+    private void fridgeReadings(String value, Duration after) {
+        rules.onEvent(event("Refrigerator/Fridge", "contact", value.equals("ok") ? "closed" : value, after));
+        rules.onEvent(event("Refrigerator/Freezer", "contact", value.equals("ok") ? "closed" : value, after));
+        rules.onEvent(event("Refrigerator/Fridge", "temperature", value.equals("ok") ? "44 F" : value, after));
+        rules.onEvent(event("Refrigerator/Freezer", "temperature", value.equals("ok") ? "5 F" : value, after));
+    }
+
+    @Test
+    void aDeviceIsOfflineWhenAllItsReadingsAreUnavailableFor30Minutes() {
+        fridgeReadings("ok", sec(0));
+        fridgeReadings("unavailable", Duration.ofMinutes(1));
+
+        assertThat(rules.check(T0.plus(Duration.ofMinutes(30)))).as("29 minutes offline").isEmpty();
+        assertThat(rules.check(T0.plus(Duration.ofMinutes(31)))).extracting(Alert::key, Alert::level, Alert::device, Alert::message)
+                .containsExactly(tuple("offline:refrigerator", Level.PROBLEM, "Refrigerator",
+                        "Refrigerator is offline. No data for 30 minutes."));
+        assertThat(rules.check(T0.plus(Duration.ofMinutes(60)))).as("reported once").isEmpty();
+        assertThat(rules.active()).extracting(Alert::device, Alert::time)
+                .containsExactly(tuple("Refrigerator", T0.plus(Duration.ofMinutes(1))));
+
+        // Any reading coming back means the fridge is online again.
+        assertThat(rules.onEvent(event("Refrigerator/Fridge", "temperature", "44 F", Duration.ofMinutes(43))))
+                .extracting(Alert::key, Alert::level, Alert::message)
+                .containsExactly(tuple("offline:refrigerator", Level.CLEARED,
+                        "Refrigerator is back online. It was offline for 42 minutes."));
+        assertThat(rules.active()).isEmpty();
+    }
+
+    @Test
+    void oneUnavailableReadingOrAShortOutageIsNotOffline() {
+        fridgeReadings("ok", sec(0));
+        rules.onEvent(event("Refrigerator/Fridge", "temperature", "unavailable", sec(10)));   // one sensor only
+        assertThat(rules.check(T0.plus(Duration.ofHours(2)))).isEmpty();
+
+        fridgeReadings("unavailable", Duration.ofHours(2));
+        assertThat(rules.onEvent(event("Refrigerator/Fridge", "contact", "closed", Duration.ofHours(2).plusMinutes(5))))
+                .as("back before the alert: nothing to clear").isEmpty();
+        assertThat(rules.check(T0.plus(Duration.ofHours(3)))).isEmpty();
+    }
+
+    @Test
+    void commandsAndUnwatchedDevicesDontCount() {
+        fridgeReadings("unavailable", sec(0));
+        rules.onEvent(event("Refrigerator", "command", "Fridge temperature set to 43 °F", sec(5)));   // not a reading
+        rules.onEvent(event("Washer", "machineState", "unavailable", sec(0)));                       // not watched
+        assertThat(rules.check(T0.plus(Duration.ofMinutes(31)))).extracting(Alert::device).containsExactly("Refrigerator");
+    }
+
+    @Test
+    void afterARestartWhileOfflineItIsNotReportedTwice() {
+        rules.seed(List.of(
+                event("Refrigerator/Fridge", "contact", "unavailable", sec(0)),
+                event("Refrigerator/Fridge", "temperature", "unavailable", sec(0)),
+                event("Refrigerator", "alert", "Refrigerator is offline. No data for 30 minutes.", Duration.ofMinutes(30))));
+
+        assertThat(rules.active()).extracting(Alert::message).containsExactly("Refrigerator is offline. No data for 30 minutes.");
+        assertThat(rules.check(T0.plus(Duration.ofHours(2)))).isEmpty();
+        assertThat(rules.onEvent(event("Refrigerator/Fridge", "contact", "closed", Duration.ofHours(2))))
+                .extracting(Alert::message).containsExactly("Refrigerator is back online. It was offline for 2 hours.");
+    }
+
+    // ------------------------------------------------------------ Home Assistant connection
+
+    @Test
+    void lostConnectionIsShownAfter10MinutesAndClearedWhenBack() {
+        assertThat(rules.onConnection(true, T0)).isEmpty();
+        assertThat(rules.onConnection(false, T0.plus(sec(5)))).isEmpty();
+        assertThat(rules.check(T0.plus(Duration.ofMinutes(10)))).as("9 min 55 s").isEmpty();
+
+        List<Alert> lost = rules.check(T0.plus(Duration.ofMinutes(11)));
+        assertThat(lost).extracting(Alert::key, Alert::level, Alert::device, Alert::message)
+                .containsExactly(tuple("connection:homeassistant", Level.PROBLEM, "Home Assistant",
+                        "Can't reach Home Assistant. No contact for 10 minutes."));
+        assertThat(lost.get(0).reachesPhone()).as("phones are reached through Home Assistant").isFalse();
+        assertThat(rules.active()).extracting(Alert::time).containsExactly(T0.plus(sec(5)));
+        assertThat(rules.onConnection(false, T0.plus(Duration.ofMinutes(12)))).as("still down").isEmpty();
+
+        List<Alert> back = rules.onConnection(true, T0.plus(Duration.ofMinutes(25)).plus(sec(5)));
+        assertThat(back).extracting(Alert::level, Alert::message)
+                .containsExactly(tuple(Level.CLEARED, "Kudil lost Home Assistant for 25 minutes. Back now."));
+        assertThat(back.get(0).reachesPhone()).isTrue();
+        assertThat(rules.active()).isEmpty();
+    }
+
+    @Test
+    void aShortConnectionBlipIsQuiet() {
+        rules.onConnection(false, T0);
+        assertThat(rules.onConnection(true, T0.plus(Duration.ofMinutes(3)))).isEmpty();
+        assertThat(rules.check(T0.plus(Duration.ofMinutes(20)))).isEmpty();
+    }
+
+    @Test
+    void otherAlertsReachPhones() {
+        rules.onEvent(event("Refrigerator/Fridge", "contact", "open", sec(0)));
+        assertThat(rules.check(T0.plus(sec(61)))).allMatch(Alert::reachesPhone);
     }
 
     @Test
