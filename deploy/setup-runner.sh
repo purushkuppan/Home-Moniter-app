@@ -33,6 +33,23 @@ HOME_DIR="$(getent passwd "$RUNNER_USER" | cut -d: -f6)"
 DIR="$HOME_DIR/actions-runner"
 as_runner() { runuser -u "$RUNNER_USER" -- "$@"; }
 
+TOKEN_HELP="Get a fresh token on your PC: gh api -X POST repos/purushkuppan/Home-Moniter-app/actions/runners/registration-token --jq .token
+(or GitHub: Settings > Actions > Runners > New self-hosted runner, the value after --token), then run this script again."
+
+# Turns what was pasted into a bare token, or fails. Accepts the token alone, with stray spaces or line
+# breaks, or a whole "./config.sh ... --token XYZ ..." line (then only XYZ is used).
+clean_token() {
+  local text="${1//$'\r'/ }"
+  if [[ "$text" == *--token* ]]; then
+    text="${text##*--token}"
+  fi
+  local token rest
+  read -r token rest <<< "$text" || true
+  [[ -z "${rest:-}" || "$1" == *--token* ]] || return 1   # two words without --token: not a token
+  [[ "$token" =~ ^[A-Za-z0-9]{20,}$ ]] || return 1
+  printf '%s' "$token"
+}
+
 if [[ ! -x "$DIR/config.sh" ]]; then
   TARBALL="actions-runner-linux-$ARCH-$VERSION.tar.gz"
   as_runner mkdir -p "$DIR"
@@ -47,11 +64,22 @@ fi
 (cd "$DIR" && ./bin/installdependencies.sh >/dev/null) || echo "Note: installdependencies.sh reported a problem; continuing."
 
 if [[ ! -f "$DIR/.runner" ]]; then
-  read -rsp "Registration token (from the GitHub page, not shown): " TOKEN
+  read -rsp "Registration token (from the GitHub page, not shown): " RAW
   echo
-  [[ -n "$TOKEN" ]] || { echo "No token given." >&2; exit 1; }
-  (cd "$DIR" && as_runner ./config.sh --url "$REPO_URL" --token "$TOKEN" \
-      --name "$RUNNER_NAME" --labels "$RUNNER_LABELS" --work _work --unattended --replace)
+  if ! TOKEN="$(clean_token "$RAW")"; then
+    unset RAW
+    echo "That isn't a runner registration token (expected one word of letters and digits, usually 29)." >&2
+    echo "$TOKEN_HELP" >&2
+    exit 1
+  fi
+  unset RAW
+  if ! (cd "$DIR" && as_runner ./config.sh --url "$REPO_URL" --token "$TOKEN" \
+      --name "$RUNNER_NAME" --labels "$RUNNER_LABELS" --work _work --unattended --replace); then
+    unset TOKEN
+    echo "GitHub refused the registration. The token may have expired (they last one hour) or been copied wrong." >&2
+    echo "$TOKEN_HELP" >&2
+    exit 1
+  fi
   unset TOKEN
 else
   echo "Runner already registered; keeping it."

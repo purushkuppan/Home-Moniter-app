@@ -39,8 +39,13 @@ own copy in `/opt/homehub/bin`, which the runner can't modify.
 
 ### The GitHub runner (`setup-runner.sh`)
 - Downloads the runner (MIT license, free for self-hosted use) at a pinned version and checks its SHA-256.
-- Asks for a **registration token**: repo **Settings → Actions → Runners → New self-hosted runner**, then copy
-  the value after `--token` (valid for one hour). It's typed hidden and is not stored.
+- Asks for a **registration token**, valid for one hour. It's typed hidden and is not stored. Easiest, on your PC:
+  ```powershell
+  gh api -X POST repos/purushkuppan/Home-Moniter-app/actions/runners/registration-token --jq .token
+  ```
+  It prints 29 letters and digits. Alternatively use repo **Settings → Actions → Runners → New self-hosted
+  runner** and copy the value after `--token`. Stray spaces or a whole pasted `config.sh` line are accepted;
+  anything else is refused with a hint before GitHub is contacted.
 - Registers the runner as `home-hub` with the label `home-hub` and installs it as a systemd service
   (`actions.runner.*`). It uses about 100 MB of memory and updates itself.
 - On GitHub the runner should then show as **Idle**.
