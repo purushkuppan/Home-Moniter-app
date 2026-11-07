@@ -9,6 +9,7 @@ import com.homehub.events.EventRepository;
 import com.homehub.homeassistant.DeviceNames;
 import com.homehub.homeassistant.EntityPatterns;
 import com.homehub.homeassistant.HomeAssistantProperties;
+import com.homehub.homeassistant.HomeAssistantStatus;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.WebSocket;
@@ -36,6 +37,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.SmartLifecycle;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpStatus;
@@ -90,21 +92,35 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
     private ScheduledExecutorService reconnector;
     private int backoffSeconds = 1;
 
+    // Connection status: reachable while the last poll worked or the live connection is up.
+    private final Consumer<HomeAssistantStatus> statusSink;
+    private volatile boolean liveConnected;
+    private boolean lastPollOk;
+    private Boolean reportedReachable;   // null until the first report
+
     @Autowired
     public HomeAssistantConnector(
             HomeAssistantProperties properties,
             @Value("${homehub.connectors.homeassistant.include:" + DEFAULT_INCLUDE + "}") String include,
             @Value("${homehub.connectors.homeassistant.live:true}") boolean live,
-            EventRepository repository) {
-        this(RestClient.builder(), properties, include, live ? repository::saveIfChanged : null);
+            EventRepository repository,
+            ApplicationEventPublisher publisher) {
+        this(RestClient.builder(), properties, include, live ? repository::saveIfChanged : null, publisher::publishEvent);
     }
 
     /** Lets tests supply a builder bound to a mock server and their own sink for live events. */
     HomeAssistantConnector(RestClient.Builder builder, HomeAssistantProperties properties, String include,
                            Consumer<Event> liveSink) {
+        this(builder, properties, include, liveSink, status -> { });
+    }
+
+    /** Also lets tests see the connection status reports. */
+    HomeAssistantConnector(RestClient.Builder builder, HomeAssistantProperties properties, String include,
+                           Consumer<Event> liveSink, Consumer<HomeAssistantStatus> statusSink) {
         this.configured = properties.isConfigured();
         this.include = EntityPatterns.parse(include);
         this.liveSink = liveSink;
+        this.statusSink = statusSink;
         if (configured) {
             String base = properties.url().trim().replaceAll("/+$", "");
             this.token = properties.token().trim();
@@ -135,6 +151,7 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
             return List.of();
         }
         Instant pollStarted = Instant.now();
+        boolean ok = false;
         try {
             List<Map<String, Object>> states = client.get().uri("/states").retrieve().body(STATES);
             List<Map<String, Object>> wanted = (states == null ? List.<Map<String, Object>>of() : states).stream()
@@ -154,6 +171,7 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
                 }
             }
             lastPollAt = pollStarted;
+            ok = true;
             return changed;
         } catch (RestClientResponseException ex) {
             if (ex.getStatusCode().isSameCodeAs(HttpStatus.UNAUTHORIZED)) {
@@ -164,8 +182,26 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
             }
         } catch (RuntimeException ex) {
             log.warn("Home Assistant is not reachable: {}", ex.getClass().getSimpleName() + ": " + ex.getMessage());
+        } finally {
+            lastPollOk = ok;
+            reportStatus();
         }
         return List.of();
+    }
+
+    /** Publishes a {@link HomeAssistantStatus} when reachability changed (and once at the start). */
+    private synchronized void reportStatus() {
+        boolean reachable = lastPollOk || liveConnected;
+        if (reportedReachable != null && reportedReachable == reachable) return;
+        reportedReachable = reachable;
+        if (!reachable) log.warn("Home Assistant can't be reached (polling and live updates both failing)");
+        statusSink.accept(new HomeAssistantStatus(reachable, Instant.now()));
+    }
+
+    /** The live connection went up or down. */
+    private void liveConnection(boolean connected) {
+        liveConnected = connected;
+        if (running) reportStatus();   // not while shutting down
     }
 
     // ---------------------------------------------------------------- live updates (WebSocket)
@@ -204,6 +240,7 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
                 .buildAsync(webSocketUri, new Listener())
                 .whenComplete((ws, error) -> {
                     if (error != null) {
+                        liveConnection(false);
                         log.warn("Home Assistant live updates: cannot connect ({}); retrying in {}s",
                                 rootMessage(error), backoffSeconds);
                         scheduleReconnect(nextBackoff());
@@ -241,10 +278,12 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
                 ws.sendText(json.writeValueAsString(
                         Map.of("id", 1, "type", "subscribe_events", "event_type", "state_changed")), true);
                 log.info("Home Assistant live updates connected");
+                liveConnection(true);
             }
             case "auth_invalid" -> {
                 log.warn("Home Assistant rejected the token for live updates. Check homeassistant.token; "
                         + "retrying in {} minutes.", AUTH_FAILED_RETRY_SECONDS / 60);
+                liveConnection(false);
                 ws.sendClose(WebSocket.NORMAL_CLOSURE, "auth failed");
                 scheduleReconnect(AUTH_FAILED_RETRY_SECONDS);
             }
@@ -301,6 +340,7 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
 
         @Override
         public CompletionStage<?> onClose(WebSocket ws, int statusCode, String reason) {
+            liveConnection(false);
             if (running && !reconnectPending.get()) {
                 log.warn("Home Assistant live updates disconnected (code {}); reconnecting in {}s", statusCode, backoffSeconds);
                 scheduleReconnect(nextBackoff());
@@ -310,6 +350,7 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
 
         @Override
         public void onError(WebSocket ws, Throwable error) {
+            liveConnection(false);
             if (running && !reconnectPending.get()) {
                 log.warn("Home Assistant live updates error ({}); reconnecting in {}s", rootMessage(error), backoffSeconds);
                 scheduleReconnect(nextBackoff());

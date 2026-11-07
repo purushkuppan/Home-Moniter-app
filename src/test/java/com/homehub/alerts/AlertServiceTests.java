@@ -43,6 +43,8 @@ class AlertServiceTests {
         assertThat(settings.tooWarmFor()).isEqualTo(Duration.ofMinutes(15));
         assertThat(settings.finished()).containsExactly("Washer", "Dryer");
         assertThat(settings.sendTo()).as("phones are set for the hub only").isEmpty();
+        assertThat(settings.offline()).containsExactly(java.util.Map.entry("Refrigerator", Duration.ofMinutes(30)));
+        assertThat(settings.connectionLostAfter()).isEqualTo(Duration.ofMinutes(10));
     }
 
     @Test

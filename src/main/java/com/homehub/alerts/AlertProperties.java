@@ -21,6 +21,9 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * @param tooWarm    per temperature reading: the highest normal value, in the reading's own unit
  * @param tooWarmFor how long a temperature must stay above its limit before an alert
  * @param finished   washers and dryers to report when their cycle ends
+ * @param offline    per device (the part before "/", e.g. {@code Refrigerator}): how long all its readings may be
+ *                   unavailable before it is reported offline
+ * @param connectionLostAfter how long Home Assistant may be unreachable before the dashboard says so
  */
 @ConfigurationProperties("homehub.alerts")
 public record AlertProperties(
@@ -29,9 +32,13 @@ public record AlertProperties(
         Map<String, Duration> doorOpen,
         Map<String, Double> tooWarm,
         @DefaultValue("15m") Duration tooWarmFor,
-        List<String> finished) {
+        List<String> finished,
+        Map<String, Duration> offline,
+        @DefaultValue("10m") Duration connectionLostAfter) {
 
     public AlertProperties {
+        offline = offline == null ? Map.of() : Map.copyOf(offline);
+        if (connectionLostAfter == null) connectionLostAfter = Duration.ofMinutes(10);
         sendTo = sendTo == null ? List.of() : sendTo.stream().map(String::trim).filter(s -> !s.isEmpty()).toList();
         link = link == null ? "" : link.trim();
         doorOpen = doorOpen == null ? Map.of() : Map.copyOf(doorOpen);

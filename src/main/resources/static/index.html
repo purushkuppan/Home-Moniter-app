@@ -122,6 +122,7 @@
   }
   .card-title { font-weight: 600; }
   .card-sub { font-size: 12px; color: var(--muted); }
+  .card-sub.offline { color: var(--bad); font-weight: 600; }
   .reading { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; border-top: 1px dashed var(--border); }
   .reading:first-of-type { border-top: 0; }
   .reading .label { color: var(--muted); font-size: 13px; }
@@ -375,6 +376,7 @@ const weekdayClock = new Intl.DateTimeFormat(undefined, { weekday: 'short', hour
 const dateClock = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
 let events = [];    // latest 50 events, for the activity table
+let activeAlerts = [];   // problems going on now (/api/alerts), for the banner and "Offline" cards
 let current = [];   // last value of every reading, for the status cards
 let lastSeenId = null;
 let activeType = 'all';
@@ -423,8 +425,8 @@ function badge(type, value) {
   const v = (value ?? '').toString();
   const lower = v.toLowerCase();
   let tone = '';
-  if (type === 'temperature' || type === 'command') tone = 'temp';
-  else if (type === 'alert') tone = 'bad';
+  if (type === 'alert' || lower === 'unavailable') tone = 'bad';   // also for a temperature that has no value
+  else if (type === 'temperature' || type === 'command') tone = 'temp';
   else if (type === 'alertCleared' || type === 'notice') tone = 'ok';
   else if (['closed', 'locked', 'done', 'finished', 'finish'].includes(lower)) tone = 'ok';
   else if (['open', 'unlocked', 'pause', 'paused'].includes(lower)) tone = 'warn';
@@ -436,7 +438,7 @@ function badge(type, value) {
 }
 
 function formatValue(type, value) {
-  if (type === 'temperature') return value.replace(/ ?(F|C)$/, '°$1');
+  if (type === 'temperature' && /^-?\d/.test(value)) return value.replace(/ ?(F|C)$/, '°$1');
   const NBSP = String.fromCharCode(160);   // non-breaking space: keeps "43 °F" together when the text wraps
   const text = value.replace(/_/g, ' ').replace(/ (°[FC])/g, NBSP + '$1');
   return text ? text.charAt(0).toUpperCase() + text.slice(1) : '—';
@@ -507,7 +509,10 @@ function renderCards() {
     const head = el('div', 'card-head');
     const ic = el('div', 'card-icon'); ic.append(icon(iconFor(d.name)));
     const titles = el('div');
-    titles.append(el('div', 'card-title', d.name), el('div', 'card-sub', 'Updated ' + timeAgo(d.updated)));
+    const offline = activeAlerts.find(a => a.key.startsWith('offline:') && a.device.toLowerCase() === d.name.toLowerCase());
+    titles.append(el('div', 'card-title', d.name), offline
+      ? el('div', 'card-sub offline', 'Offline since ' + sinceText(new Date(offline.time)))
+      : el('div', 'card-sub', 'Updated ' + timeAgo(d.updated)));
     head.append(ic, titles);
     card.append(head);
     for (const r of [...d.readings.values()].sort((a, b) => a.label.localeCompare(b.label))) {
@@ -653,6 +658,10 @@ async function loadAlerts() {
 }
 
 function renderAlerts(list) {
+  const offlineChanged = JSON.stringify(list.filter(a => a.key.startsWith('offline:')))
+                      !== JSON.stringify(activeAlerts.filter(a => a.key.startsWith('offline:')));
+  activeAlerts = list;
+  if (offlineChanged) renderCards();
   const box = $('alerts');
   box.hidden = list.length === 0;
   box.replaceChildren(...list.map(a => {

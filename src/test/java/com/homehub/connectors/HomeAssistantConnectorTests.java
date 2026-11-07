@@ -15,6 +15,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 
 import com.homehub.events.Event;
 import com.homehub.homeassistant.HomeAssistantProperties;
+import com.homehub.homeassistant.HomeAssistantStatus;
 import java.net.http.WebSocket;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -165,6 +166,40 @@ class HomeAssistantConnectorTests {
 
         assertThat(new HomeAssistantConnector(builder, PROPS, HomeAssistantConnector.DEFAULT_INCLUDE, null).poll()).isEmpty();
         server.verify();
+    }
+
+    @Test
+    void reportsOnlyChangesInReachability() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo(URL + "/api/states")).andRespond(withStatus(HttpStatus.BAD_GATEWAY));
+        server.expect(requestTo(URL + "/api/states")).andRespond(withStatus(HttpStatus.BAD_GATEWAY));
+        expectStates(server, "[]");
+        expectStates(server, "[]");
+        List<HomeAssistantStatus> statuses = new ArrayList<>();
+        var connector = new HomeAssistantConnector(builder, PROPS, "lock.*", null, statuses::add);
+
+        connector.poll();   // fails: unreachable
+        connector.poll();   // still failing: no new report
+        connector.poll();   // works again
+        connector.poll();
+
+        server.verify();
+        assertThat(statuses).extracting(HomeAssistantStatus::reachable).containsExactly(false, true);
+    }
+
+    @Test
+    void aWorkingLiveConnectionMeansReachableEvenIfAPollFails() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo(URL + "/api/states")).andRespond(withStatus(HttpStatus.BAD_GATEWAY));
+        List<HomeAssistantStatus> statuses = new ArrayList<>();
+        var connector = new HomeAssistantConnector(builder, PROPS, "lock.*", event -> { }, statuses::add);
+
+        connector.handleMessage(mock(WebSocket.class), "{\"type\":\"auth_ok\"}");
+        connector.poll();
+
+        assertThat(statuses).extracting(HomeAssistantStatus::reachable).containsExactly(true);
     }
 
     @Test

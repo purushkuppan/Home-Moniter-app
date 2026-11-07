@@ -28,4 +28,15 @@ public record Alert(String key, Level level, String device, String message, Inst
 
     /** Event types written by alerts themselves; they are never device readings. */
     static final Set<String> EVENT_TYPES = Set.of("alert", "alertCleared", "notice");
+
+    /** Key of the "can't reach Home Assistant" alert and its all-clear. */
+    static final String CONNECTION_KEY = "connection:homeassistant";
+
+    /**
+     * Whether this alert can go to phones. Notifications travel through Home Assistant, so "can't reach Home
+     * Assistant" is shown on the dashboard only; its "back now" all-clear does go to phones.
+     */
+    boolean reachesPhone() {
+        return !(level == Level.PROBLEM && CONNECTION_KEY.equals(key));
+    }
 }
