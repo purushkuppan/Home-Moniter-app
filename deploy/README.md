@@ -1,40 +1,54 @@
 # Deploying HomeHub to home-hub
 
-## How a release reaches the hub
-1. Merge pull requests into `main` (CI builds and tests every PR).
-2. Tag a version: `git tag v0.1.0 && git push origin v0.1.0`
-3. GitHub Actions builds the jar in the cloud and creates a GitHub Release.
+## How a release reaches the hub (automatic)
+1. Merge pull requests into `main`. CI checks the hub scripts and builds and tests every PR.
+2. Tag a version from an up-to-date `main`: `git tag v0.3.2 && git push origin v0.3.2`
+3. GitHub Actions (`.github/workflows/release.yml`) builds and tests the jar in the cloud and creates a GitHub Release.
 4. The self-hosted runner on `home-hub` downloads the jar and runs
-   `/opt/homehub/bin/install-release.sh`, which installs it to `/opt/homehub/releases/<version>`,
-   points `/opt/homehub/current` at it, restarts the service and checks
-   `/actuator/health`. If the check fails, it switches back to the previous release.
+   `/opt/homehub/bin/install-release.sh`, which:
+   - installs it to `/opt/homehub/releases/<version>`
+   - points `/opt/homehub/current` at it
+   - restarts the service and checks `/actuator/health`
+   - if the check fails, switches back to the previous release and removes the broken one
+5. A tag that is **not newer** than the version already running is released on GitHub but not deployed.
+   Pushing old tags is therefore harmless.
 
-The runner connects out to GitHub, so no router ports are opened.
+Follow it under **Actions** on GitHub (or `gh run watch`).
+
+The runner connects out to GitHub, so no router ports are opened. It runs as the user `ghrunner`, which may
+run only `install-release.sh` as root. That script reads the jar with `ghrunner`'s own rights and accepts
+only jar files, so it can't be used to copy root-only files. Only tags pushed to the repository trigger a
+deploy, never pull requests.
+
+**Keep the repository private.** On a public repository, strangers' pull requests could run code on a
+self-hosted runner.
 
 ## One-time setup on the hub
-```bash
-git clone https://github.com/purushkuppan/Home-Moniter-app.git ~/Home-Moniter-app
-cd ~/Home-Moniter-app
-sudo bash deploy/setup-hub.sh
+The repository is private, so copy the `deploy` folder from your PC instead of cloning:
+```powershell
+scp -r deploy purush@192.168.5.251:~/homehub-deploy
 ```
+Then on the hub:
+```bash
+cd ~/homehub-deploy
+sudo bash setup-hub.sh      # service, folders, credentials, sudo rule, firewall
+sudo bash setup-runner.sh   # GitHub runner for automatic deploys
+```
+Re-run `setup-hub.sh` after any change to `install-release.sh` or `homehub.service` in git. The hub uses its
+own copy in `/opt/homehub/bin`, which the runner can't modify.
 
-### Install the GitHub Actions runner (free for self-hosted)
-1. On GitHub: repo **Settings → Actions → Runners → New self-hosted runner → Linux x64**.
-   Keep that page open; it shows the download commands and a one-time token.
-2. On the hub:
-   ```bash
-   sudo -iu ghrunner
-   mkdir actions-runner && cd actions-runner
-   # paste the download and extract commands from the GitHub page, then:
-   ./config.sh --url https://github.com/purushkuppan/Home-Moniter-app --token <TOKEN> --labels home-hub --unattended
-   exit
-   cd /home/ghrunner/actions-runner && sudo ./svc.sh install ghrunner && sudo ./svc.sh start
-   ```
-3. The runner should show as **Idle** on the GitHub page with labels `self-hosted, linux, home-hub`.
+### The GitHub runner (`setup-runner.sh`)
+- Downloads the runner (MIT license, free for self-hosted use) at a pinned version and checks its SHA-256.
+- Asks for a **registration token**: repo **Settings → Actions → Runners → New self-hosted runner**, then copy
+  the value after `--token` (valid for one hour). It's typed hidden and is not stored.
+- Registers the runner as `home-hub` with the label `home-hub` and installs it as a systemd service
+  (`actions.runner.*`). It uses about 100 MB of memory and updates itself.
+- On GitHub the runner should then show as **Idle**.
 
-Keep the repository private: self-hosted runners on public repositories can run code from strangers' pull requests.
+Remove it: `cd /home/ghrunner/actions-runner && sudo ./svc.sh stop && sudo ./svc.sh uninstall`, then
+delete the runner on the GitHub page.
 
-## Deploying from your PC (without a tag)
+## Deploying from your PC (fallback, without a tag)
 `deploy.ps1` in the repo root builds and tests the jar on Windows, copies it to the hub and runs the
 same `install-release.sh` (health check and rollback included):
 ```powershell

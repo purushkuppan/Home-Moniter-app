@@ -1,13 +1,14 @@
 name: Release and deploy
 
-# Push a version tag (for example: git tag v0.1.0 && git push origin v0.1.0) to build,
+# Push a version tag (for example: git tag v0.3.2 && git push origin v0.3.2) to build,
 # publish a GitHub Release, and deploy to the home hub through its self-hosted runner.
+# Only tags trigger this workflow, never pull requests: the hub's runner must not run code from PRs.
 on:
   push:
     tags: ['v*']
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: deploy-home-hub
@@ -16,6 +17,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # to create the GitHub Release
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-java@v6
@@ -41,10 +44,27 @@ jobs:
 
   deploy:
     needs: build
+    # Only in the owner's repository (never in a fork), on the hub's own runner.
+    if: github.repository == 'purushkuppan/Home-Moniter-app'
     runs-on: [self-hosted, linux, home-hub]
+    timeout-minutes: 15
     steps:
-      - uses: actions/download-artifact@v8
+      - name: Deploy only versions newer than the one running
+        id: check
+        run: |
+          current="$(basename "$(readlink -f /opt/homehub/current 2>/dev/null)" 2>/dev/null || true)"
+          newest="$(printf '%s\n%s\n' "$current" "$GITHUB_REF_NAME" | sort -V | tail -n 1)"
+          if [[ "$current" =~ ^v[0-9] && ( "$GITHUB_REF_NAME" == "$current" || "$newest" != "$GITHUB_REF_NAME" ) ]]; then
+            echo "::notice::Not deploying $GITHUB_REF_NAME: the hub already runs $current."
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Deploying $GITHUB_REF_NAME (running: ${current:-none})."
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.check.outputs.deploy == 'true'
+        uses: actions/download-artifact@v8
         with:
           name: homehub-release
       - name: Install, restart and health-check (rolls back on failure)
+        if: steps.check.outputs.deploy == 'true'
         run: sudo /opt/homehub/bin/install-release.sh "$PWD/homehub.jar" "$GITHUB_REF_NAME"
