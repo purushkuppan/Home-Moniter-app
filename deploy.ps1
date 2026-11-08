@@ -47,7 +47,7 @@ $scp = if (Test-Path "$sshDir\scp.exe") { "$sshDir\scp.exe" } else { 'scp' }
 function Step($text) { Write-Host "`n==> $text" -ForegroundColor Cyan }
 
 Step 'Running tests and building the jar'
-& .\mvnw.cmd -q clean package
+& .\mvnw.cmd -q clean package "-Drevision=$($Version.TrimStart('v'))"   # the jar knows its release (shown on the dashboard)
 if ($LASTEXITCODE -ne 0) { throw "Build or tests failed (exit code $LASTEXITCODE). Nothing was deployed." }
 
 $jar = Get-ChildItem target\homehub-*.jar | Where-Object { $_.Name -notlike '*.original' } | Select-Object -First 1

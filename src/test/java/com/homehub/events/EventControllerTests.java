@@ -72,6 +72,13 @@ class EventControllerTests {
     }
 
     @Test
+    void dashboardShowsTheRunningVersion() throws Exception {
+        String page = get("/");
+        assertThat(page).contains("<span id=\"appVersion\"></span>", "<span id=\"footerVersion\"></span>",
+                "const { started, version } = await res.json();", "showVersion(version);");
+    }
+
+    @Test
     void aHiddenDashboardMakesNoPeriodicRequests() throws Exception {
         String page = get("/");
         assertThat(page).contains("const watched = () => !paused && !document.hidden;",
