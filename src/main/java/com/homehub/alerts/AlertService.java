@@ -3,8 +3,10 @@ package com.homehub.alerts;
 import com.homehub.events.Event;
 import com.homehub.events.EventRepository;
 import com.homehub.homeassistant.HomeAssistantStatus;
+import com.homehub.weather.WeatherService;
 import jakarta.annotation.PreDestroy;
 import java.time.Clock;
+import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
@@ -34,6 +36,8 @@ public class AlertService {
     static final long PHONE_DELAY_AFTER_RECONNECT_SECONDS = 30;
 
     private final AlertRules rules;
+    private final WeatherAlerts weatherAlerts;
+    private final WeatherService weather;
     private final EventRepository repository;
     private final AlertNotifier notifier;
     private final Clock clock;
@@ -44,16 +48,23 @@ public class AlertService {
     });
 
     @Autowired
-    public AlertService(AlertProperties properties, EventRepository repository, AlertNotifier notifier) {
-        this(properties, repository, notifier, Clock.systemUTC());
+    public AlertService(AlertProperties properties, EventRepository repository, AlertNotifier notifier,
+                        WeatherService weather) {
+        // The hub's own time zone: weather checks run at local times such as 07:00.
+        this(properties, repository, notifier, weather, Clock.systemDefaultZone());
     }
 
-    AlertService(AlertProperties properties, EventRepository repository, AlertNotifier notifier, Clock clock) {
+    AlertService(AlertProperties properties, EventRepository repository, AlertNotifier notifier, WeatherService weather,
+                 Clock clock) {
         this.rules = new AlertRules(properties);
+        this.weatherAlerts = new WeatherAlerts(properties, clock.getZone());
+        this.weather = weather;
         this.repository = repository;
         this.notifier = notifier;
         this.clock = clock;
-        rules.seed(repository.latestPerReading());   // a door left open before a restart is still watched
+        List<Event> latest = repository.latestPerReading();
+        rules.seed(latest);           // a door left open before a restart is still watched
+        weatherAlerts.seed(latest);   // and today's weather notices aren't sent twice
         worker.scheduleWithFixedDelay(this::check, CHECK_EVERY_SECONDS, CHECK_EVERY_SECONDS, TimeUnit.SECONDS);
     }
 
@@ -90,11 +101,18 @@ public class AlertService {
     }
 
     void check() {
+        // An exception would cancel the repeating check, so catch everything.
+        Instant now = clock.instant();
         try {
-            raise(rules.check(clock.instant()));
+            raise(rules.check(now));
         } catch (RuntimeException ex) {
-            // An exception would cancel the repeating check, so catch everything.
             log.warn("Alerts: check failed ({})", ex.getClass().getSimpleName());
+        }
+        try {
+            // The forecast is only read around the daily check times; WeatherService keeps it for 10 minutes.
+            if (weatherAlerts.due(now)) raise(weatherAlerts.check(now, weather.current().orElse(null)));
+        } catch (RuntimeException ex) {
+            log.warn("Alerts: weather check failed ({})", ex.getClass().getSimpleName());
         }
     }
 

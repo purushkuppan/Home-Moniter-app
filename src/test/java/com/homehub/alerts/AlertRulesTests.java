@@ -21,7 +21,8 @@ class AlertRulesTests {
             Duration.ofMinutes(15),
             List.of("Washer", "Dryer"),
             Map.of("Refrigerator", Duration.ofMinutes(30)),
-            Duration.ofMinutes(10));
+            Duration.ofMinutes(10),
+            null, null, null, null);
 
     private final AlertRules rules = new AlertRules(SETTINGS);
     private long nextId = 1;
