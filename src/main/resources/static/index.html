@@ -92,6 +92,17 @@
     border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer;
   }
   .btn:hover { border-color: var(--accent); color: var(--accent); }
+  /* °F / °C switch */
+  .unit-switch {
+    display: inline-flex; flex: none; padding: 2px; border-radius: 999px;
+    background: var(--surface); border: 1px solid var(--border);
+  }
+  .unit-switch button {
+    border: 0; border-radius: 999px; padding: 4px 9px; background: transparent; color: var(--muted);
+    font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  .unit-switch button:hover { color: var(--accent); }
+  .unit-switch button[aria-pressed="true"] { background: var(--accent); color: #fff; }
 
   /* Alerts banner: problems going on right now */
   .alerts { display: grid; gap: 8px; margin: 0 0 20px; }
@@ -274,6 +285,7 @@
     .control select, .search input, dialog input { font-size: 16px; }
     .control select { padding: 7px 8px; }
     .btn, .btn.small, .chip { min-height: 38px; padding: 8px 14px; font-size: 14px; }
+    .unit-switch button { min-height: 32px; padding: 6px 9px; font-size: 14px; }
     .control { padding: 11px 0; }
 
     /* Activity: compact two-line rows instead of a wide table */
@@ -308,6 +320,10 @@
       <p>Home appliance monitor</p>
     </div>
     <div class="live" id="live"><span class="dot"></span><span id="status">Connecting…</span></div>
+    <div class="unit-switch" id="unitSwitch" role="group" aria-label="Temperature unit" title="Show temperatures in °F or °C">
+      <button type="button" data-unit="F" aria-pressed="false">°F</button>
+      <button type="button" data-unit="C" aria-pressed="false">°C</button>
+    </div>
     <button class="btn" id="pause" type="button">Pause</button>
   </div>
   <!-- Phones only: one section at a time instead of one very long page -->
@@ -475,10 +491,76 @@ function badge(type, value) {
 }
 
 function formatValue(type, value) {
-  if (type === 'temperature' && /^-?\d/.test(value)) return value.replace(/ ?(F|C)$/, '°$1');
-  const NBSP = String.fromCharCode(160);   // non-breaking space: keeps "43 °F" together when the text wraps
-  const text = value.replace(/_/g, ' ').replace(/ (°[FC])/g, NBSP + '$1');
+  if (type === 'temperature' && /^-?\d/.test(value)) {
+    const m = TEMP_READING.exec(value);   // "37.5 F"; a number without a unit is shown as it is
+    return m ? showTemp(m[1], m[2]) : value;
+  }
+  const text = keepTogether(convertTemps(value.replace(/_/g, ' ')));
   return text ? text.charAt(0).toUpperCase() + text.slice(1) : '—';
+}
+
+/** "43 °F" -> "43&nbsp;°F": keeps a temperature together when the text wraps. */
+function keepTogether(text) {
+  return text.replace(/ (°[FC])/g, String.fromCharCode(160) + '$1');
+}
+
+// ---------------------------------------------------------------- temperature unit (°F / °C)
+// Display only: readings, the weather and the API keep Home Assistant's unit, and nothing converted is ever sent back.
+
+const UNIT_KEY = 'homehub.tempUnit';
+const TEMP_READING = /^(-?\d+(?:\.\d+)?) ?([FC])$/i;            // a temperature event's value: "37.5 F"
+const TEMP_IN_TEXT = /(-?\d+(?:\.\d+)?) ?°([FC])\b/g;           // inside a message: "too warm: 47.5 °F (above 45 °F"
+let unitChoice = null;   // 'F' or 'C' once chosen; null = show every temperature in the unit it came in
+
+/** Converts a temperature to the chosen unit: { n, unit, converted }. `from` is 'F' or 'C'. */
+function toChosenUnit(n, from) {
+  from = from.toUpperCase();
+  if (!unitChoice || unitChoice === from || !Number.isFinite(n)) return { n, unit: from, converted: false };
+  return { n: unitChoice === 'C' ? (n - 32) * 5 / 9 : n * 9 / 5 + 32, unit: unitChoice, converted: true };
+}
+
+/** One decimal at most: 2.7777 -> "2.8", 3.0 -> "3", -0.04 -> "0". */
+function oneDecimal(n) {
+  const r = Math.round(n * 10) / 10;
+  return String(r === 0 ? 0 : r);
+}
+
+/** "37.5", "F" -> "37.5°F", or "3.1°C" when °C is chosen. An unconverted number keeps its own text. */
+function showTemp(numberText, from) {
+  const t = toChosenUnit(Number(numberText), from);
+  return (t.converted ? oneDecimal(t.n) : numberText) + '°' + t.unit;
+}
+
+/** Converts every "47.5 °F" inside a server-written text, e.g. an alert or a command in the activity list. */
+function convertTemps(text) {
+  if (!unitChoice) return text;
+  return text.replace(TEMP_IN_TEXT, (all, n, from) => {
+    const t = toChosenUnit(Number(n), from);
+    return t.converted ? oneDecimal(t.n) + ' °' + t.unit : all;
+  });
+}
+
+/** The unit the data comes in, for the switch before anything was chosen: the weather's or a reading's, else °F. */
+function dataUnit() {
+  const weatherUnit = lastWeather && /^°?\s*([FC])$/i.exec(lastWeather.temperatureUnit || '');
+  if (weatherUnit) return weatherUnit[1].toUpperCase();
+  const reading = current.map(e => e.type === 'temperature' && TEMP_READING.exec(e.value || '')).find(Boolean);
+  return reading ? reading[2].toUpperCase() : 'F';
+}
+
+function renderUnitSwitch() {
+  const shown = unitChoice || dataUnit();
+  document.querySelectorAll('#unitSwitch button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.unit === shown)));
+}
+
+/** The switch was used: remember the choice and show every temperature again in it. */
+function setUnit(unit) {
+  unitChoice = unit;
+  try { localStorage.setItem(UNIT_KEY, unit); } catch (err) { /* private mode: just don't remember */ }
+  renderAll();
+  renderAlerts(activeAlerts);
+  if (lastWeather) renderWeather(lastWeather);
+  renderControls();
 }
 
 function timeAgo(date) {
@@ -582,7 +664,7 @@ function renderTable(newIds = new Set()) {
   const q = $('search').value.trim().toLowerCase();
   const shown = events.filter(e =>
     (activeType === 'all' || e.type === activeType) &&
-    (!q || `${e.device} ${e.type} ${prettyType(e.type)} ${e.value}`.toLowerCase().includes(q)));
+    (!q || `${e.device} ${e.type} ${prettyType(e.type)} ${e.value} ${formatValue(e.type, e.value ?? '')}`.toLowerCase().includes(q)));
 
   const rows = $('rows');
   if (shown.length === 0) {
@@ -629,6 +711,7 @@ function renderAll(newIds) {
   renderCards();
   renderChips();
   renderTable(newIds);
+  renderUnitSwitch();
 }
 
 /** Full reload of the latest 50 events. Used at start, after every reconnect and as a slow safety net. */
@@ -643,6 +726,7 @@ const WEATHER = {
   windy: ['wind', 'Windy'], 'windy-variant': ['wind', 'Windy'], exceptional: ['storm', 'Severe weather']
 };
 const weekdayShort = new Intl.DateTimeFormat(undefined, { weekday: 'short' });
+let lastWeather = null;   // kept to show it again when the temperature unit changes
 
 async function loadWeather() {
   try {
@@ -653,10 +737,14 @@ async function loadWeather() {
 }
 
 function renderWeather(w) {
+  lastWeather = w;
   const box = $('weather');
   const [iconName, label] = WEATHER[w.condition] || ['cloud', w.condition ? w.condition.replace(/[-_]/g, ' ') : ''];
-  const deg = t => t == null ? '–' : Math.round(t) + '°';
-  const unit = (w.temperatureUnit || '').replace('°', '');
+  const known = /^°?\s*([FC])$/i.exec(w.temperatureUnit || '');   // only °F and °C can be converted
+  const from = known ? known[1].toUpperCase() : null;
+  const unit = from ? (unitChoice || from) : (w.temperatureUnit || '').replace('°', '');
+  // Whole degrees; "|| 0" turns -0 into 0.
+  const deg = t => t == null ? '–' : (Math.round(from ? toChosenUnit(t, from).n : t) || 0) + '°';
 
   const now = el('div', 'weather-now');
   if (w.temperature == null || !WEATHER[w.condition]) {
@@ -689,6 +777,7 @@ function renderWeather(w) {
   if (w.attribution) children.push(el('div', 'weather-credit', w.attribution));
   box.replaceChildren(...children);
   box.hidden = false;
+  renderUnitSwitch();
 }
 
 async function load() {
@@ -766,7 +855,7 @@ function renderAlerts(list) {
     const item = el('div', 'alert-item');
     const when = el('span', 'since', 'since ' + sinceText(since));
     when.title = dayFormat.format(since) + ', ' + clockFormat.format(since);
-    item.append(icon('bell'), el('span', '', a.message), when);
+    item.append(icon('bell'), el('span', '', keepTogether(convertTemps(a.message || ''))), when);
     return item;
   }));
 }
@@ -848,19 +937,28 @@ function controlRow(c) {
   };
 
   if (c.kind === 'number') {
+    // The options keep the device's own numbers as their values, so what is sent to Home Assistant is never a
+    // converted number; only the text shows the chosen unit.
     const unit = c.unit ? ' ' + c.unit : '';
+    const tempUnit = /^°?\s*([FC])$/i.exec(c.unit || '');
+    const shown = v => {
+      const t = tempUnit ? toChosenUnit(Number(v), tempUnit[1]) : null;
+      return t && t.converted ? oneDecimal(t.n) + ' °' + t.unit : v + unit;
+    };
+    // In the confirmation, a converted value also names the device's own setting: "3.3 °C (38 °F)".
+    const both = v => shown(v) === v + unit ? v + unit : shown(v) + ' (' + v + unit + ')';
     const select = el('select');
     select.disabled = disabled;
     select.setAttribute('aria-label', c.label);
     for (const v of numberValues(c)) {
-      const o = el('option', '', v + unit);
+      const o = el('option', '', shown(v));
       o.value = v;
       if (Number(c.value) === v) o.selected = true;
       select.append(o);
     }
     actions.append(select, button('Set', () => {
-      if (Number(select.value) === Number(c.value)) return toast(c.label + ' is already ' + c.value + unit + '.');
-      if (confirm('Set ' + c.label.toLowerCase() + ' to ' + select.value + unit + '?')) sendCommand(c, select.value);
+      if (Number(select.value) === Number(c.value)) return toast(c.label + ' is already ' + shown(c.value) + '.');
+      if (confirm('Set ' + c.label.toLowerCase() + ' to ' + both(select.value) + '?')) sendCommand(c, select.value);
     }));
   } else if (c.kind === 'switch') {
     const on = c.value === 'on';
@@ -912,7 +1010,7 @@ async function sendCommand(c, value) {
     const body = await res.json().catch(() => ({}));
     if (res.status === 401 || res.status === 429 || res.status === 403) lockControls();
     if (!res.ok) return toast(body.message || 'That didn\'t work (HTTP ' + res.status + ').', true);
-    toast(body.message || 'Done.');
+    toast(body.message ? convertTemps(body.message) : 'Done.');
     keepUnlocked();
     setTimeout(loadControls, 1500);   // give the device a moment, then show its new state
   } catch (err) {
@@ -1015,6 +1113,25 @@ document.querySelectorAll('#tabs button').forEach(b => b.addEventListener('click
 let savedTab = null;
 try { savedTab = localStorage.getItem(TAB_KEY); } catch (err) { /* ignore */ }
 showTab(['status', 'controls', 'activity'].includes(savedTab) ? savedTab : 'status');
+
+// Temperature unit: remembered per browser. "?unit=c" or "?unit=f" in the address chooses it too (e.g. a bookmark).
+document.querySelectorAll('#unitSwitch button').forEach(b => b.addEventListener('click', () => setUnit(b.dataset.unit)));
+{
+  const params = new URLSearchParams(location.search);
+  const fromUrl = (params.get('unit') || '').toUpperCase();
+  let saved = null;
+  try { saved = localStorage.getItem(UNIT_KEY); } catch (err) { /* ignore */ }
+  if (fromUrl === 'F' || fromUrl === 'C') {
+    unitChoice = fromUrl;
+    try { localStorage.setItem(UNIT_KEY, fromUrl); } catch (err) { /* ignore */ }
+    params.delete('unit');   // keep the address clean, so a later choice on the switch isn't undone by a reload
+    const rest = params.toString();
+    try { history.replaceState(null, '', location.pathname + (rest ? '?' + rest : '') + location.hash); } catch (err) { /* ignore */ }
+  } else if (saved === 'F' || saved === 'C') {
+    unitChoice = saved;
+  }
+  renderUnitSwitch();   // nothing else is shown yet: load() below draws everything in this unit
+}
 
 $('pause').addEventListener('click', () => {
   paused = !paused;

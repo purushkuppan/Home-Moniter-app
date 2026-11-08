@@ -60,6 +60,25 @@ class EventControllerTests {
     }
 
     @Test
+    void dashboardHasATemperatureUnitSwitchThatIsRememberedPerBrowser() throws Exception {
+        String page = get("/");
+        assertThat(page).contains("id=\"unitSwitch\"", "aria-label=\"Temperature unit\"",
+                "data-unit=\"F\"", "data-unit=\"C\"", ">°F</button>", ">°C</button>");
+        // Remembered in the browser only, and every access is guarded (private mode throws).
+        assertThat(page).contains("const UNIT_KEY = 'homehub.tempUnit'",
+                "try { localStorage.setItem(UNIT_KEY, unit); } catch");
+        // Controls keep the device's own number as the value that is sent; only the label is converted.
+        assertThat(page).contains("o.value = v;", "sendCommand(c, select.value)");
+    }
+
+    @Test
+    void temperaturesStayInHomeAssistantsUnitInTheApi() throws Exception {
+        repository.add("Refrigerator/Freezer", "temperature", "0 F");
+        // Conversion is display only: the API and the database keep the reading as it came in.
+        assertThat(get("/api/events/latest")).contains("\"value\":\"0 F\"");
+    }
+
+    @Test
     void versionIdentifiesTheRunningServer() throws Exception {
         String version = get("/api/version");
         assertThat(version).contains("\"started\":\"").contains("\"version\":\"");
