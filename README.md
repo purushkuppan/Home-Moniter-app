@@ -24,6 +24,20 @@ Run the tests:
 .\mvnw.cmd test
 ```
 
+## Dependency licenses
+
+Every build checks the licenses of the libraries that ship in the jar
+([ADR 8](docs/adr/0008-license-check-in-the-build.md)). The list is written to
+`target/generated-sources/license/THIRD-PARTY.txt`; CI prints it and keeps it as the `third-party-licenses` artifact.
+
+- **Allowed:** Apache-2.0, MIT, BSD, EPL, CC0, LGPL, and GPL-2.0 with the Classpath Exception.
+- **Dual-licensed** libraries pass if one of their licenses is allowed (for example "EPL-2.0 or GPL-2.0").
+- **Fails the build:** GPL and AGPL, any other license not on the list, and a library with no license.
+- Test-only libraries are not checked, because they are not in the jar.
+
+If a new library fails only because its POM spells an allowed license differently, add the spelling to
+`licenseMerges` in `pom.xml`. Allowing a new license is a decision: update the ADR.
+
 ## Configuration
 
 Non-secret settings live in [`src/main/resources/application.properties`](src/main/resources/application.properties):
