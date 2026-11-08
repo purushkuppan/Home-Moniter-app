@@ -65,6 +65,9 @@ Non-secret settings live in [`src/main/resources/application.properties`](src/ma
 | `homehub.alerts.freeze-check` | `19:00` | Local time of the daily freeze check (`HH:mm`) |
 | `homehub.alerts.rain-from` | `0.1` | Rain notice when today's forecast has at least this much rain or snow; empty = off |
 | `homehub.alerts.rain-check` | `07:00` | Local time of the daily rain check (`HH:mm`) |
+| `homehub.events.keep-days` | `90` | Days to keep readings and commands; `0` or empty = forever |
+| `homehub.events.keep-alert-days` | `365` | Days to keep alerts, all-clears and notices; `0` or empty = forever |
+| `homehub.events.cleanup-at` | `03:30` | Local time of the daily cleanup of old events (`HH:mm`); it also runs a few minutes after startup |
 | `homehub.weather.entity` | `weather.home` | Home Assistant weather entity for the dashboard card; empty = no card |
 | `homehub.weather.refresh` | `10m` | How long the weather is kept before asking Home Assistant again |
 
@@ -116,6 +119,16 @@ next two days (high/low, rain amount when some is expected). It comes from Home 
 met.no allows commercial use with the credit line shown under the card. Kudil reads it on demand and keeps it
 for 10 minutes; weather is not stored as events. If Home Assistant can't be reached, the last result is shown
 with its time.
+
+## Old events
+
+Every night at 03:30 (hub time), and once a few minutes after a start, Kudil deletes readings and commands older
+than 90 days and alerts, all-clears and notices older than a year (`homehub.events.keep-days`,
+`homehub.events.keep-alert-days`). The newest event of every device reading is always kept, however old:
+readings are only stored when they change, so a door that has been closed for months still shows "closed".
+Rows are deleted in batches of 5,000, so the dashboard and connectors never wait long, and one log line says how
+many were removed. There is no `VACUUM`: SQLite reuses the freed space for new events, so `homehub.db` stops
+growing at about the size of 90 days of events instead of shrinking and growing again.
 
 ## Secrets
 
