@@ -79,6 +79,23 @@ class EventControllerTests {
     }
 
     @Test
+    void fontsAreServedByKudilAndKeptByBrowsersForAYear() throws Exception {
+        for (String font : new String[] {"inter-latin-wght-normal.woff2", "space-grotesk-latin-wght-normal.woff2"}) {
+            HttpResponse<byte[]> response = http.send(
+                    HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/fonts/" + font)).build(),
+                    HttpResponse.BodyHandlers.ofByteArray());
+            assertThat(response.statusCode()).as(font).isEqualTo(200);
+            assertThat(new String(response.body(), 0, 4, java.nio.charset.StandardCharsets.US_ASCII)).isEqualTo("wOF2");
+            assertThat(response.headers().firstValue("Cache-Control")).hasValueSatisfying(v ->
+                    assertThat(v).contains("max-age=31536000", "immutable"));
+        }
+        // The page itself is still checked on every visit.
+        HttpResponse<String> page = http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/")).build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertThat(page.headers().firstValue("Cache-Control")).hasValueSatisfying(v -> assertThat(v).contains("no-cache"));
+    }
+
+    @Test
     void aHiddenDashboardMakesNoPeriodicRequests() throws Exception {
         String page = get("/");
         assertThat(page).contains("const watched = () => !paused && !document.hidden;",

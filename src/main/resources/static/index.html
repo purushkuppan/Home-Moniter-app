@@ -4,44 +4,77 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Kudil</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%234f46e5' d='M12 3 2 11h3v9h5v-6h4v6h5v-9h3z'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%231F6E53' d='M12 3 2 11h3v9h5v-6h4v6h5v-9h3z'/%3E%3C/svg%3E">
+<link rel="preload" href="fonts/inter-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+<script>
+  // Theme before the first paint, so the page never flashes the wrong colors: Dark when the phone or computer is
+  // set to dark mode, otherwise Light, and it follows a change of that setting while the page is open.
+  (function () {
+    const dark = window.matchMedia('(prefers-color-scheme: dark)');
+    const apply = () => { document.documentElement.dataset.theme = dark.matches ? 'dark' : 'light'; };
+    apply();
+    dark.addEventListener('change', apply);
+  })();
+</script>
 <style>
-  :root {
-    --bg: #f4f6fb;
-    --surface: #ffffff;
-    --surface-2: #f8f9fc;
-    --border: #e4e7ef;
-    --text: #1d2330;
-    --muted: #6b7385;
-    --accent: #4f46e5;
-    --accent-soft: #eef0ff;
-    --ok: #12805c;      --ok-soft: #e3f6ee;
-    --warn: #a15c00;    --warn-soft: #fff1dc;
-    --active: #1d5fd1;  --active-soft: #e4eeff;
-    --idle: #59627a;    --idle-soft: #eef0f5;
-    --bad: #c0362c;     --bad-soft: #fde8e6;
-    --new: #fff9db;
-    --shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 4px 16px rgba(16, 24, 40, .06);
-    --radius: 14px;
+  /* Fonts are served by Kudil itself (SIL Open Font License, see fonts/), so the dashboard works without internet. */
+  @font-face {
+    font-family: "Inter"; font-style: normal; font-weight: 100 900; font-display: swap;
+    src: url("fonts/inter-latin-wght-normal.woff2") format("woff2");
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #0f131a;
-      --surface: #171c25;
-      --surface-2: #1c222d;
-      --border: #2a3140;
-      --text: #e8ebf2;
-      --muted: #9aa3b5;
-      --accent: #8b85ff;
-      --accent-soft: #24234a;
-      --ok: #4cd6a0;      --ok-soft: #133528;
-      --warn: #ffb44d;    --warn-soft: #3b2a10;
-      --active: #74a7ff;  --active-soft: #172a4a;
-      --idle: #aab2c5;    --idle-soft: #252c39;
-      --bad: #ff8a80;     --bad-soft: #3d1a17;
-      --new: #2f2a12;
-      --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 4px 16px rgba(0, 0, 0, .25);
-    }
+  @font-face {
+    font-family: "Space Grotesk"; font-style: normal; font-weight: 300 700; font-display: swap;
+    src: url("fonts/space-grotesk-latin-wght-normal.woff2") format("woff2");
+  }
+
+  /*
+   * Design tokens: every color on the page comes from here. Light is the default; data-theme="dark" on <html>
+   * switches the whole page. A color always means the same thing:
+   *   --ok    green  secure, closed, fine
+   *   --warn  amber  needs attention, or light and heat
+   *   --info  blue   cooling, running, information
+   *   --bad   red    a problem going on right now
+   * Text colors reach a contrast of at least 4.5:1 on every background in both themes (checked by DesignTokensTests).
+   */
+  :root {
+    color-scheme: light;
+    --bg: #F5F6F3;
+    --surface: #FFFFFF;
+    --surface-2: #F1F3EF;
+    --border: #E1E4DF;
+    --text: #16201C;
+    --muted: #5B6661;
+    --accent: #1F6E53;  --accent-soft: #E3F1EA;  --on-accent: #FFFFFF;
+    --ok: #1F6E53;      --ok-soft: #E3F1EA;
+    --warn: #A35A06;    --warn-soft: #FBEEDB;
+    --info: #2F5FA8;    --info-soft: #E6EDF8;
+    --idle: #5B6661;    --idle-soft: #EEF0EC;
+    --bad: #B42318;     --bad-soft: #FDE9E7;    --on-bad: #FFFFFF;
+    --new: #FFF6D6;
+    --scrim: rgba(15, 20, 18, .45);
+    --shadow: 0 1px 2px rgba(22, 32, 28, .04), 0 4px 16px rgba(22, 32, 28, .06);
+    --radius: 14px;
+    --tap: 44px;   /* smallest touch target */
+    --font-body: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --font-heading: "Space Grotesk", "Inter", system-ui, sans-serif;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #0F1412;
+    --surface: #18201C;
+    --surface-2: #212A26;
+    --border: #29332E;
+    --text: #E8EDEA;
+    --muted: #9AA59F;
+    --accent: #4FBF94;  --accent-soft: #1C3A2E;  --on-accent: #0F1412;
+    --ok: #4FBF94;      --ok-soft: #1C3A2E;
+    --warn: #E2A04A;    --warn-soft: #3A2B14;
+    --info: #8AAEE8;    --info-soft: #1D2A40;
+    --idle: #9AA59F;    --idle-soft: #232C28;
+    --bad: #FF8A80;     --bad-soft: #3D1A17;    --on-bad: #0F1412;
+    --new: #2E2A14;
+    --scrim: rgba(0, 0, 0, .6);
+    --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 4px 16px rgba(0, 0, 0, .25);
   }
 
   * { box-sizing: border-box; }
@@ -49,7 +82,7 @@
     margin: 0;
     background: var(--bg);
     color: var(--text);
-    font: 15px/1.45 "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+    font: 15px/1.45 var(--font-body);
   }
   .wrap { max-width: 1120px; margin: 0 auto; padding: 0 20px 48px; }
   svg.icon { width: 20px; height: 20px; flex: none; }
@@ -66,9 +99,9 @@
   .logo {
     display: grid; place-items: center;
     width: 38px; height: 38px; border-radius: 11px;
-    background: var(--accent); color: #fff;
+    background: var(--accent); color: var(--on-accent);
   }
-  .brand h1 { margin: 0; font-size: 18px; letter-spacing: -.01em; }
+  .brand h1 { margin: 0; font-family: var(--font-heading); font-size: 20px; font-weight: 700; color: var(--accent); letter-spacing: -.01em; }
   .brand p { margin: 0; color: var(--muted); font-size: 13px; }
   /* The running release, on every screen size (phones hide the header subtitle). */
   .app-version { margin: 24px 0 8px; text-align: center; color: var(--muted); font-size: 12px; }
@@ -104,7 +137,7 @@
     font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
   }
   .unit-switch button:hover { color: var(--accent); }
-  .unit-switch button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+  .unit-switch button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
 
   /* Alerts banner: problems going on right now */
   .alerts { display: grid; gap: 8px; margin: 0 0 20px; }
@@ -123,8 +156,8 @@
   }
   .weather[hidden] { display: none; }
   .weather-now { display: flex; align-items: center; gap: 12px; }
-  .weather-now svg.icon { width: 42px; height: 42px; color: var(--accent); }
-  .weather-temp { font-size: 30px; font-weight: 700; line-height: 1; letter-spacing: -.02em; }
+  .weather-now svg.icon { width: 42px; height: 42px; color: var(--info); }
+  .weather-temp { font-family: var(--font-heading); font-size: 30px; font-weight: 600; line-height: 1; letter-spacing: -.02em; }
   .weather-cond { font-weight: 600; }
   .weather-meta { color: var(--muted); font-size: 13px; }
   .weather-meta.stale { color: var(--warn); }
@@ -134,9 +167,9 @@
     border-radius: 10px; background: var(--surface-2); font-size: 13px;
   }
   .weather-day .name { color: var(--muted); font-weight: 600; }
-  .weather-day svg.icon { color: var(--accent); }
+  .weather-day svg.icon { color: var(--info); }
   .weather-day .hilo { font-weight: 600; white-space: nowrap; }
-  .weather-day .rain { color: var(--active); font-size: 12px; white-space: nowrap; }
+  .weather-day .rain { color: var(--info); font-size: 12px; white-space: nowrap; }
   .weather-credit { flex-basis: 100%; margin-top: -6px; color: var(--muted); font-size: 11px; }
 
   /* Section titles */
@@ -180,8 +213,8 @@
     border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
   }
   .btn.small { padding: 5px 11px; }
-  .btn.primary, .btn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
-  .btn.primary:hover, .btn.on:hover { color: #fff; opacity: .9; }
+  .btn.primary, .btn.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+  .btn.primary:hover, .btn.on:hover { color: var(--on-accent); opacity: .9; }
   .btn:disabled { opacity: .5; cursor: not-allowed; }
   .seg { display: inline-flex; gap: 4px; }
   .toast {
@@ -189,13 +222,13 @@
     max-width: calc(100% - 32px); padding: 10px 16px; border-radius: 10px; font-size: 14px;
     background: var(--text); color: var(--bg); box-shadow: var(--shadow);
   }
-  .toast.error { background: var(--bad); color: #fff; }
+  .toast.error { background: var(--bad); color: var(--on-bad); }
   dialog {
     width: min(340px, calc(100% - 32px)); padding: 20px; border: 1px solid var(--border);
     border-radius: var(--radius); background: var(--surface); color: var(--text); box-shadow: var(--shadow);
   }
-  dialog::backdrop { background: rgba(10, 14, 22, .45); }
-  dialog h3 { margin: 0 0 4px; font-size: 17px; }
+  dialog::backdrop { background: var(--scrim); }
+  dialog h3 { margin: 0 0 4px; font-family: var(--font-heading); font-size: 18px; font-weight: 600; }
   .dialog-sub { margin: 0 0 14px; color: var(--muted); font-size: 13px; }
   dialog input {
     width: 100%; padding: 10px; border-radius: 10px; border: 1px solid var(--border);
@@ -214,9 +247,9 @@
   .badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
   .badge.ok { background: var(--ok-soft); color: var(--ok); }
   .badge.warn { background: var(--warn-soft); color: var(--warn); }
-  .badge.active { background: var(--active-soft); color: var(--active); }
+  .badge.active { background: var(--info-soft); color: var(--info); }
   .badge.bad { background: var(--bad-soft); color: var(--bad); }
-  .badge.temp { background: var(--accent-soft); color: var(--accent); }
+  .badge.temp { background: var(--info-soft); color: var(--info); }
   .badge.temp::before { display: none; }
 
   /* Activity panel */
@@ -234,7 +267,7 @@
     border: 1px solid var(--border); background: var(--surface); color: var(--muted);
     border-radius: 999px; padding: 5px 12px; font: inherit; font-size: 13px; cursor: pointer;
   }
-  .chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 
   .table-scroll { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; }
@@ -263,6 +296,12 @@
 
   header .tabs { display: none; }
 
+  /* Touch screens of any size (tablets too): every control at least --tap high. */
+  @media (pointer: coarse) {
+    .btn, .chip, .control select { min-height: var(--tap); }
+    .unit-switch button { min-height: calc(var(--tap) - 6px); }
+  }
+
   @media (max-width: 640px) {
     .wrap { padding-left: 16px; padding-right: 16px; }
     .brand p, .col-id, .col-ago, .col-type, .live .clock-text { display: none; }
@@ -272,10 +311,10 @@
     /* Tabs: one section at a time */
     header .tabs { display: flex; gap: 6px; padding-top: 0; padding-bottom: 10px; }
     .tabs button {
-      flex: 1; min-height: 38px; border: 1px solid var(--border); border-radius: 999px;
+      flex: 1; min-height: var(--tap); border: 1px solid var(--border); border-radius: 999px;
       background: var(--surface); color: var(--muted); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
     }
-    .tabs button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .tabs button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
     .tab-panel { display: none; }
     .tab-panel.active { display: block; }
     .cards { grid-template-columns: 1fr; gap: 12px; margin-bottom: 20px; }
@@ -286,8 +325,8 @@
     /* Text of at least 16px stops iPhones from zooming in when a field is tapped */
     .control select, .search input, dialog input { font-size: 16px; }
     .control select { padding: 7px 8px; }
-    .btn, .btn.small, .chip { min-height: 38px; padding: 8px 14px; font-size: 14px; }
-    .unit-switch button { min-height: 32px; padding: 6px 9px; font-size: 14px; }
+    .btn, .btn.small, .chip { min-height: var(--tap); padding: 8px 14px; font-size: 14px; }
+    .unit-switch button { min-height: calc(var(--tap) - 6px); padding: 6px 9px; font-size: 14px; }
     .control { padding: 11px 0; }
 
     /* Activity: compact two-line rows instead of a wide table */
