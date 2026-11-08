@@ -130,6 +130,17 @@ Rows are deleted in batches of 5,000, so the dashboard and connectors never wait
 many were removed. There is no `VACUUM`: SQLite reuses the freed space for new events, so `homehub.db` stops
 growing at about the size of 90 days of events instead of shrinking and growing again.
 
+## Temperature unit (°F / °C)
+
+The **°F / °C** switch in the dashboard header changes how temperatures are shown: status cards, the activity
+list, the alert banner, the weather card and the fridge/freezer setpoints in Controls. The choice is remembered
+in that browser (each phone or computer chooses its own); until something is chosen, temperatures are shown as
+Home Assistant reports them. A link can choose it too: add `?unit=c` (or `?unit=f`) to the dashboard address.
+
+It is display only: the database, the API, alert limits and phone notifications keep Home Assistant's unit, and
+a setpoint is always sent to Home Assistant as the device's own number (the °C list is just a label for it; the
+confirmation shows both, e.g. "2.8 °C (37 °F)").
+
 ## Secrets
 
 Tokens and other secrets are **never** stored in the project. They are read from configuration
