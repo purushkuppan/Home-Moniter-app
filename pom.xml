@@ -71,6 +71,67 @@
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
 			</plugin>
+			<!-- License check (ADR 8): lists the licenses of every dependency that ships in the jar in
+			     target/generated-sources/license/THIRD-PARTY.txt and fails the build on anything not
+			     allowed below. Build plugin only (Apache-2.0): it is not in the app; the jar only gets the
+			     THIRD-PARTY.txt list. -->
+			<plugin>
+				<groupId>org.codehaus.mojo</groupId>
+				<artifactId>license-maven-plugin</artifactId>
+				<version>2.7.1</version>
+				<executions>
+					<execution>
+						<id>check-third-party-licenses</id>
+						<goals>
+							<goal>add-third-party</goal>
+						</goals>
+						<configuration>
+							<!-- Only what ships in the jar. Test libraries never leave the build machine. -->
+							<excludedScopes>test,provided,system</excludedScopes>
+							<sortArtifactByName>true</sortArtifactByName>
+							<failOnMissing>true</failOnMissing>
+							<failOnBlacklist>true</failOnBlacklist>
+							<!-- Allow-list: any license not listed here fails the build (GPL and AGPL are never on
+							     it), unless the same dependency also offers an allowed license: dual licensing such
+							     as "EPL-2.0 OR GPL-2.0" passes. No excludedLicenses on purpose: in 2.7.1 it drops the
+							     GPL option of a dual-licensed dependency from the report. -->
+							<includedLicenses>
+								<includedLicense>Apache-2.0</includedLicense>
+								<includedLicense>MIT</includedLicense>
+								<includedLicense>BSD-2-Clause</includedLicense>
+								<includedLicense>BSD-3-Clause</includedLicense>
+								<includedLicense>EPL-1.0</includedLicense>
+								<includedLicense>EPL-2.0</includedLicense>
+								<includedLicense>CC0-1.0</includedLicense>
+								<includedLicense>LGPL-2.1-only</includedLicense>
+								<includedLicense>LGPL-2.1-or-later</includedLicense>
+								<includedLicense>LGPL-3.0-only</includedLicense>
+								<includedLicense>LGPL-3.0-or-later</includedLicense>
+								<includedLicense>GPL-2.0-with-classpath-exception</includedLicense>
+							</includedLicenses>
+							<!-- POMs spell licenses many ways; map the spellings to SPDX ids. Exact, case-sensitive
+							     match. An unknown spelling fails the build: add it here if it is the same license. -->
+							<licenseMerges>
+								<licenseMerge>Apache-2.0|The Apache Software License, Version 2.0|Apache License, Version 2.0|The Apache License, Version 2.0|Apache License 2.0|Apache License Version 2.0|Apache 2.0|Apache 2|Apache License, version 2.0|Apache Software License - Version 2.0|ASF 2.0</licenseMerge>
+								<licenseMerge>MIT|The MIT License|MIT License|The MIT License (MIT)</licenseMerge>
+								<licenseMerge>BSD-2-Clause|The BSD 2-Clause License|BSD 2-Clause License</licenseMerge>
+								<licenseMerge>BSD-3-Clause|The BSD 3-Clause License|BSD 3-Clause License|BSD License 3|New BSD License|Revised BSD|EDL 1.0|Eclipse Distribution License - v 1.0|Eclipse Distribution License v. 1.0</licenseMerge>
+								<licenseMerge>EPL-1.0|Eclipse Public License 1.0|Eclipse Public License - v 1.0|Eclipse Public License v1.0|EPL 1.0</licenseMerge>
+								<licenseMerge>EPL-2.0|Eclipse Public License 2.0|Eclipse Public License - v 2.0|Eclipse Public License v2.0|Eclipse Public License v. 2.0|EPL 2.0</licenseMerge>
+								<licenseMerge>CC0-1.0|Public Domain, per Creative Commons CC0|CC0|CC0 1.0 Universal</licenseMerge>
+								<licenseMerge>LGPL-2.1-only|GNU Lesser General Public License, Version 2.1|GNU Lesser General Public License v2.1|GNU Lesser General Public License Version 2.1|LGPL 2.1|LGPL-2.1</licenseMerge>
+								<licenseMerge>LGPL-3.0-only|GNU Lesser General Public License version 3|GNU Lesser General Public License, Version 3|GNU Lesser General Public License v3.0|LGPL-3.0|LGPLv3</licenseMerge>
+								<licenseMerge>GPL-2.0-with-classpath-exception|GPL2 w/ CPE|GPLv2 with Classpath Exception|GNU General Public License, version 2 with the GNU Classpath Exception|GPL-2.0-only WITH Classpath-exception-2.0|GPL-2.0 WITH Classpath-exception-2.0</licenseMerge>
+								<licenseMerge>GPL-2.0-only|GPL-2.0|GPLv2|GPL 2|GNU General Public License, version 2|GNU General Public License v2.0|GNU General Public License, Version 2.0|GNU General Public License Version 2</licenseMerge>
+								<licenseMerge>GPL-3.0-only|GPL-3.0|GPLv3|GPL 3|GNU General Public License v3.0|GNU General Public License, Version 3|GNU General Public License, version 3|GNU General Public License v3</licenseMerge>
+								<licenseMerge>GPL-3.0-or-later|GNU General Public License v3.0 or later|GPLv3+</licenseMerge>
+								<licenseMerge>AGPL-3.0-only|AGPL-3.0|AGPLv3|AGPL 3|GNU Affero General Public License v3.0|GNU Affero General Public License, Version 3|GNU Affero General Public License, version 3|GNU Affero General Public License v3|GNU AFFERO GENERAL PUBLIC LICENSE, Version 3 (AGPL-3.0)</licenseMerge>
+								<licenseMerge>AGPL-3.0-or-later|GNU Affero General Public License v3.0 or later|AGPLv3+</licenseMerge>
+							</licenseMerges>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
 		</plugins>
 	</build>
 

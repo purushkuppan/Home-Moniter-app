@@ -24,6 +24,15 @@ jobs:
         run: shellcheck deploy/*.sh
       - name: Build and test
         run: bash ./mvnw -B -ntp verify
+      - name: List dependency licenses
+        # Written by the license check in the build (ADR 8); a GPL/AGPL dependency fails the step above.
+        run: cat target/generated-sources/license/THIRD-PARTY.txt
+      - name: Keep the license list
+        uses: actions/upload-artifact@v7
+        with:
+          name: third-party-licenses
+          path: target/generated-sources/license/THIRD-PARTY.txt
+          retention-days: 30
       - name: Keep the jar for 7 days
         uses: actions/upload-artifact@v7
         with:
