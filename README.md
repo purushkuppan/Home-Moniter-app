@@ -49,6 +49,7 @@ Non-secret settings live in [`src/main/resources/application.properties`](src/ma
 | `homehub.connectors.fake.enabled` | `true` | Sample-data connector |
 | `homehub.connectors.homeassistant.enabled` | `false` | Home Assistant connector |
 | `homehub.connectors.homeassistant.live` | `true` | Receive Home Assistant changes instantly over its WebSocket API (polling remains as a fallback) |
+| `homehub.connectors.homeassistant.poll-while-live` | `5m` | While live updates work, read Home Assistant's full state list only this often (a safety net); while they don't, every `interval` |
 | `homehub.connectors.homeassistant.include` | doors, temperatures, machine/job states, locks | Home Assistant entity ids to read (comma-separated, `*` wildcard) |
 | `homehub.controls.enabled` | `true` | Device controls on the dashboard (still need a PIN, see below) |
 | `homehub.controls.entities` | fridge, washer and dryer controls | Home Assistant entities that may be changed (`number`, `switch`, `select`, `button` only) |

@@ -780,7 +780,9 @@ function renderWeather(w) {
   renderUnitSwitch();
 }
 
+let everLoaded = false;
 async function load() {
+  everLoaded = true;
   loadAlerts();   // in parallel: the banner shouldn't wait for the activity list
   loadWeather();  // the server keeps it for 10 minutes, so asking often is cheap
   try {
@@ -1144,11 +1146,18 @@ $('pause').addEventListener('click', () => {
   }
 });
 
-load();
+// The live stream loads everything when it opens (see connect), so the page doesn't load twice on start.
+// If the stream is slow to open, don't keep the page empty waiting for it.
 connect();
-setInterval(() => { if (!paused) { checkVersion(); load(); } }, SAFETY_RELOAD_MS);
+setTimeout(() => { if (!everLoaded) load(); }, 3000);
+
+// Periodic work only while someone can see the page: a phone in a pocket or a tab in the background makes no
+// requests. Live events still arrive, and showing the page again catches up at once.
+const watched = () => !paused && !document.hidden;
+setInterval(() => { if (watched()) { checkVersion(); load(); } }, SAFETY_RELOAD_MS);
 // Keep "x seconds ago" and "Updated ..." current between events.
-setInterval(() => { if (!paused && events.length) { renderCards(); renderTable(); } }, 10000);
+setInterval(() => { if (watched() && events.length) { renderCards(); renderTable(); } }, 10000);
+document.addEventListener('visibilitychange', () => { if (watched()) { checkVersion(); load(); } });
 </script>
 </body>
 </html>

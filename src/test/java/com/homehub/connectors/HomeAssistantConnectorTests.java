@@ -17,7 +17,11 @@ import com.homehub.events.Event;
 import com.homehub.homeassistant.HomeAssistantProperties;
 import com.homehub.homeassistant.HomeAssistantStatus;
 import java.net.http.WebSocket;
+import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -200,6 +204,46 @@ class HomeAssistantConnectorTests {
         connector.poll();
 
         assertThat(statuses).extracting(HomeAssistantStatus::reachable).containsExactly(true);
+    }
+
+    /** A clock the test moves forward by hand. */
+    private static final class TestClock extends Clock {
+        Instant now = Instant.parse("2026-11-08T18:00:00Z");
+
+        @Override public ZoneId getZone() { return ZoneOffset.UTC; }
+        @Override public Clock withZone(ZoneId zone) { return this; }
+        @Override public Instant instant() { return now; }
+    }
+
+    @Test
+    void whileLiveUpdatesWorkPollingIsOnlyASafetyNet() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        expectStates(server, "[]");   // at startup
+        expectStates(server, "[]");   // 5 minutes later
+        expectStates(server, "[]");   // live updates dropped: back to every run
+        expectStates(server, "[]");
+        TestClock clock = new TestClock();
+        var connector = new HomeAssistantConnector(builder, PROPS, "lock.*", event -> { }, status -> { },
+                Duration.ofMinutes(5), clock);
+        WebSocket ws = mock(WebSocket.class);
+
+        connector.handleMessage(ws, "{\"type\":\"auth_ok\"}");
+        connector.poll();
+        clock.now = clock.now.plusSeconds(30);
+        connector.poll();                          // skipped
+        clock.now = clock.now.plusSeconds(240);
+        connector.poll();                          // skipped: 4.5 minutes after the last poll
+        clock.now = clock.now.plusSeconds(30);
+        connector.poll();                          // 5 minutes: polls
+
+        connector.handleMessage(ws, "{\"type\":\"auth_invalid\"}");
+        clock.now = clock.now.plusSeconds(30);
+        connector.poll();
+        clock.now = clock.now.plusSeconds(30);
+        connector.poll();
+
+        server.verify();   // exactly four requests
     }
 
     @Test
