@@ -1,0 +1,12 @@
+[Unit]
+Description=Kudil nightly backup at 03:00
+
+[Timer]
+# Before Kudil's 03:30 clean-up of old events, so the night's backup still has them.
+OnCalendar=*-*-* 03:00:00
+# If the hub was off at 03:00, back up soon after it starts.
+Persistent=true
+RandomizedDelaySec=2m
+
+[Install]
+WantedBy=timers.target

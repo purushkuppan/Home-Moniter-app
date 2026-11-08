@@ -1,0 +1,19 @@
+[Unit]
+Description=Kudil nightly backup (homehub.db and Home Assistant config)
+Documentation=file:/opt/homehub/bin/backup.sh
+After=homehub.service
+
+[Service]
+Type=oneshot
+# Root, to read Home Assistant's root-owned config; Kudil's database is read as homehub (see backup.sh).
+# Optional settings (COPY_TO, KEEP), root-only.
+EnvironmentFile=-/etc/homehub/backup.env
+ExecStart=/opt/homehub/bin/backup.sh
+# Stay out of the way of the apps.
+Nice=10
+IOSchedulingClass=idle
+# Hardening: no access to home folders, /usr, /boot and /etc stay read-only.
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true

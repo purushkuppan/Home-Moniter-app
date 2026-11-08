@@ -29,6 +29,17 @@ install -o root -g root -m 0644 "$HERE/homehub.service" /etc/systemd/system/home
 systemctl daemon-reload
 systemctl enable homehub
 
+# Nightly backup at 03:00 to /var/backups/homehub (see backup.sh). sqlite3 makes safe copies of live databases.
+command -v sqlite3 >/dev/null || apt-get install -y sqlite3
+install -o root -g root -m 0755 "$HERE/backup.sh" /opt/homehub/bin/backup.sh
+install -d -o root -g root -m 0700 /var/backups/homehub
+install -d -o root -g root -m 0755 /var/lib/homehub-backup
+[[ -f /etc/homehub/backup.env ]] || install -o root -g root -m 0600 /dev/null /etc/homehub/backup.env
+install -o root -g root -m 0644 "$HERE/homehub-backup.service" /etc/systemd/system/homehub-backup.service
+install -o root -g root -m 0644 "$HERE/homehub-backup.timer" /etc/systemd/system/homehub-backup.timer
+systemctl daemon-reload
+systemctl enable --now homehub-backup.timer
+
 # User for the GitHub Actions runner, allowed to run only the deploy script as root
 id ghrunner >/dev/null 2>&1 || useradd --create-home --shell /bin/bash ghrunner
 echo "ghrunner ALL=(root) NOPASSWD: /opt/homehub/bin/install-release.sh" > /etc/sudoers.d/homehub-deploy
@@ -44,4 +55,5 @@ echo "Done. Next:"
 echo " 1. Put the Home Assistant token in /etc/homehub/credentials/homeassistant.token (see deploy/README.md)"
 echo "    and any other secrets in /etc/homehub/homehub.env (sudo nano /etc/homehub/homehub.env)"
 echo " 2. Remove the old open rules for 8080 and 9090: sudo ufw status numbered, then sudo ufw delete <number>"
-echo " 3. Install the GitHub runner for automatic deploys: sudo bash setup-runner.sh (see deploy/README.md)"
+echo " 3. Make a first backup now: sudo systemctl start homehub-backup, then ls -l /var/backups/homehub"
+echo " 4. Install the GitHub runner for automatic deploys: sudo bash setup-runner.sh (see deploy/README.md)"

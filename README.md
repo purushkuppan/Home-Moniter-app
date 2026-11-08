@@ -84,6 +84,8 @@ Events are stored in SQLite: `data/homehub.db` locally, `/opt/homehub/data/homeh
   run at startup. To change it, add a new `V<n>__what.sql`; never edit one that has been released.
 - SQLite runs in WAL mode, so `homehub.db-wal` and `homehub.db-shm` appear next to the database. Back up with
   `sqlite3 homehub.db ".backup backup.db"` (or `VACUUM INTO`), not by copying the file.
+- On the hub this happens every night at 03:00, together with Home Assistant's configuration; restore steps are
+  in [deploy/README.md](deploy/README.md#backups).
 
 ## Alerts
 

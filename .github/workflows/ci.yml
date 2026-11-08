@@ -21,7 +21,12 @@ jobs:
       - name: Check the hub scripts
         # They run as root on the live hub, so a typo must fail the PR, not the deploy.
         # ShellCheck (GPL-3.0) is preinstalled on the GitHub runner; it is a CI tool, not part of the app.
-        run: shellcheck deploy/*.sh
+        run: shellcheck deploy/*.sh deploy/test/*.sh
+      - name: Test the backup script
+        # sqlite3 is preinstalled on GitHub's Ubuntu runners; installed here only if an image ever drops it.
+        run: |
+          command -v sqlite3 >/dev/null || { sudo apt-get update -q && sudo apt-get install -y -q sqlite3; }
+          bash deploy/test/backup-test.sh
       - name: Build and test
         run: bash ./mvnw -B -ntp verify
       - name: List dependency licenses
