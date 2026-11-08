@@ -7,6 +7,8 @@ import com.homehub.weather.WeatherService;
 import jakarta.annotation.PreDestroy;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
@@ -37,6 +39,7 @@ public class AlertService {
 
     private final AlertRules rules;
     private final WeatherAlerts weatherAlerts;
+    private final BackupAlerts backupAlerts;
     private final WeatherService weather;
     private final EventRepository repository;
     private final AlertNotifier notifier;
@@ -48,16 +51,17 @@ public class AlertService {
     });
 
     @Autowired
-    public AlertService(AlertProperties properties, EventRepository repository, AlertNotifier notifier,
-                        WeatherService weather) {
+    public AlertService(AlertProperties properties, BackupProperties backup, EventRepository repository,
+                        AlertNotifier notifier, WeatherService weather) {
         // The hub's own time zone: weather checks run at local times such as 07:00.
-        this(properties, repository, notifier, weather, Clock.systemDefaultZone());
+        this(properties, backup, repository, notifier, weather, Clock.systemDefaultZone());
     }
 
-    AlertService(AlertProperties properties, EventRepository repository, AlertNotifier notifier, WeatherService weather,
-                 Clock clock) {
+    AlertService(AlertProperties properties, BackupProperties backup, EventRepository repository, AlertNotifier notifier,
+                 WeatherService weather, Clock clock) {
         this.rules = new AlertRules(properties);
         this.weatherAlerts = new WeatherAlerts(properties, clock.getZone());
+        this.backupAlerts = new BackupAlerts(backup, clock.instant(), clock.getZone());
         this.weather = weather;
         this.repository = repository;
         this.notifier = notifier;
@@ -65,6 +69,7 @@ public class AlertService {
         List<Event> latest = repository.latestPerReading();
         rules.seed(latest);           // a door left open before a restart is still watched
         weatherAlerts.seed(latest);   // and today's weather notices aren't sent twice
+        backupAlerts.seed(latest);    // nor a missing backup that was already reported
         worker.scheduleWithFixedDelay(this::check, CHECK_EVERY_SECONDS, CHECK_EVERY_SECONDS, TimeUnit.SECONDS);
     }
 
@@ -97,7 +102,10 @@ public class AlertService {
 
     /** Problems that were reported and are still going on, for the dashboard banner. */
     public List<Alert> active() {
-        return rules.active();
+        List<Alert> active = new ArrayList<>(rules.active());
+        active.addAll(backupAlerts.active());
+        active.sort(Comparator.comparing(Alert::time));
+        return active;
     }
 
     void check() {
@@ -113,6 +121,11 @@ public class AlertService {
             if (weatherAlerts.due(now)) raise(weatherAlerts.check(now, weather.current().orElse(null)));
         } catch (RuntimeException ex) {
             log.warn("Alerts: weather check failed ({})", ex.getClass().getSimpleName());
+        }
+        try {
+            raise(backupAlerts.check(now));
+        } catch (RuntimeException ex) {
+            log.warn("Alerts: backup check failed ({})", ex.getClass().getSimpleName());
         }
     }
 

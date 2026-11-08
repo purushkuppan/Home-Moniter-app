@@ -100,6 +100,7 @@ HomeHub warns when something needs attention. Details and trade-offs: [ADR 5](do
 | Home Assistant unreachable | No contact for 10 minutes. **Dashboard only**: phones are reached through Home Assistant | Phone: "Kudil lost Home Assistant for 25 minutes. Back now." |
 | Freeze warning | Checked at 19:00: tomorrow's forecast low at or below 32 °F. "Freeze warning: low of 28 °F tonight" | – |
 | Rain expected | Checked at 07:00: today's forecast has at least 0.1 in. "Rain expected today: 0.31 in" (or Snow) | – |
+| Backup missing | Hub only: the last good nightly backup is more than 26 hours old. "Nightly backup missing. Last good backup: Sun Nov 8, 4:01 PM." | "Backups are working again. Last backup: Tue Nov 10, 3:01 AM." |
 
 - **Dashboard:** a red banner shows problems still going on. Every alert is listed in the activity list
   (Alert, All clear, Notice).

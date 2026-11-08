@@ -44,6 +44,8 @@ class ProdProfileTests {
         assertThat(prod.getProperty("homehub.alerts.enabled")).isEqualTo("true");
         assertThat(prod.getProperty("homehub.alerts.send-to")).isEqualTo("notify.mobile_app_purushphone");
         assertThat(prod.getProperty("homehub.alerts.link")).isEqualTo("http://192.168.5.251:8080");
+        // The hub alerts when its nightly backup (deploy/backup.sh) stops; elsewhere there is no backup to watch.
+        assertThat(prod.getProperty("homehub.alerts.backup.status-file")).isEqualTo("/var/lib/homehub-backup/last-success");
 
         // Same entity list as the default configuration.
         StandardEnvironment dev = load(home, creds);
@@ -53,6 +55,7 @@ class ProdProfileTests {
         // ...and the dev defaults are untouched by the prod file.
         assertThat(dev.getProperty("spring.datasource.url")).isEqualTo("jdbc:sqlite:data/homehub.db");
         assertThat(dev.getProperty("homehub.connectors.fake.enabled")).isEqualTo("true");
+        assertThat(dev.getProperty("homehub.alerts.backup.status-file")).isEmpty();
     }
 
     @Test
