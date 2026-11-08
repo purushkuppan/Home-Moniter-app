@@ -5,6 +5,7 @@ import static org.assertj.core.groups.Tuple.tuple;
 
 import com.homehub.alerts.Alert.Level;
 import com.homehub.events.Event;
+import com.homehub.events.EventCleanup;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -266,5 +267,10 @@ class AlertRulesTests {
         assertThat(AlertRules.human(sec(61))).isEqualTo("1 minute");
         assertThat(AlertRules.human(Duration.ofMinutes(60))).isEqualTo("1 hour");
         assertThat(AlertRules.human(Duration.ofMinutes(125))).isEqualTo("2 hours 5 minutes");
+    }
+
+    @Test
+    void eventCleanupKeepsEveryAlertTypeForTheAlertPeriod() {
+        assertThat(EventCleanup.ALERT_TYPES).containsExactlyInAnyOrderElementsOf(Alert.EVENT_TYPES);
     }
 }
