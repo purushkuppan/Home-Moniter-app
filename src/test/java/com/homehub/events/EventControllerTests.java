@@ -72,6 +72,17 @@ class EventControllerTests {
     }
 
     @Test
+    void aHiddenDashboardMakesNoPeriodicRequests() throws Exception {
+        String page = get("/");
+        assertThat(page).contains("const watched = () => !paused && !document.hidden;",
+                "setInterval(() => { if (watched()) { checkVersion(); load(); } }, SAFETY_RELOAD_MS);",
+                "document.addEventListener('visibilitychange', () => { if (watched()) { checkVersion(); load(); } });");
+        // Loaded once on start: by the live stream opening, or after 3 s if it doesn't.
+        assertThat(page).contains("stream.onopen = () => { checkVersion(); load(); };",
+                "setTimeout(() => { if (!everLoaded) load(); }, 3000);");
+    }
+
+    @Test
     void temperaturesStayInHomeAssistantsUnitInTheApi() throws Exception {
         repository.add("Refrigerator/Freezer", "temperature", "0 F");
         // Conversion is display only: the API and the database keep the reading as it came in.

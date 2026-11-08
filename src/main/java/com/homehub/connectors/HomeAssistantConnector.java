@@ -13,6 +13,7 @@ import com.homehub.homeassistant.HomeAssistantStatus;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.WebSocket;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -51,8 +52,9 @@ import tools.jackson.databind.json.JsonMapper;
  * <ul>
  *   <li><b>Live</b>: subscribes to {@code state_changed} over the WebSocket API ({@code /api/websocket}) and saves every
  *       change the moment Home Assistant reports it, with Home Assistant's own change time.</li>
- *   <li><b>Poll</b>: {@code GET /api/states} on the scheduler's interval, as a safety net while the live connection is
- *       down and to record the current state at startup.</li>
+ *   <li><b>Poll</b>: {@code GET /api/states} to record the current state at startup, on the scheduler's interval
+ *       while the live connection is down, and only every {@code poll-while-live} (5 minutes) as a safety net while it
+ *       works.</li>
  * </ul>
  * Only entities whose id matches one of the include patterns are used. Each entity becomes an event named after its
  * Home Assistant device (for example "Refrigerator/Fridge", type "contact", value "closed"), and an event is only
@@ -80,6 +82,9 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
     private final Map<String, String> deviceNames = new HashMap<>();
     private boolean missingConfigWarned;
     private Instant lastPollAt;
+    /** While live updates work, poll this seldom (a safety net); while they don't, on every scheduler run. */
+    private final Duration pollWhileLive;
+    private final Clock clock;
 
     // Live updates
     private final Consumer<Event> liveSink;   // null = live updates off
@@ -103,9 +108,11 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
             HomeAssistantProperties properties,
             @Value("${homehub.connectors.homeassistant.include:" + DEFAULT_INCLUDE + "}") String include,
             @Value("${homehub.connectors.homeassistant.live:true}") boolean live,
+            @Value("${homehub.connectors.homeassistant.poll-while-live:5m}") Duration pollWhileLive,
             EventRepository repository,
             ApplicationEventPublisher publisher) {
-        this(RestClient.builder(), properties, include, live ? repository::saveIfChanged : null, publisher::publishEvent);
+        this(RestClient.builder(), properties, include, live ? repository::saveIfChanged : null, publisher::publishEvent,
+                pollWhileLive, Clock.systemUTC());
     }
 
     /** Lets tests supply a builder bound to a mock server and their own sink for live events. */
@@ -114,13 +121,22 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
         this(builder, properties, include, liveSink, status -> { });
     }
 
-    /** Also lets tests see the connection status reports. */
+    /** Also lets tests see the connection status reports. Polls on every call, like before live updates. */
     HomeAssistantConnector(RestClient.Builder builder, HomeAssistantProperties properties, String include,
                            Consumer<Event> liveSink, Consumer<HomeAssistantStatus> statusSink) {
+        this(builder, properties, include, liveSink, statusSink, Duration.ZERO, Clock.systemUTC());
+    }
+
+    /** Also lets tests set how often to poll while live updates work, and the clock. */
+    HomeAssistantConnector(RestClient.Builder builder, HomeAssistantProperties properties, String include,
+                           Consumer<Event> liveSink, Consumer<HomeAssistantStatus> statusSink,
+                           Duration pollWhileLive, Clock clock) {
         this.configured = properties.isConfigured();
         this.include = EntityPatterns.parse(include);
         this.liveSink = liveSink;
         this.statusSink = statusSink;
+        this.pollWhileLive = pollWhileLive == null ? Duration.ZERO : pollWhileLive;
+        this.clock = clock;
         if (configured) {
             String base = properties.url().trim().replaceAll("/+$", "");
             this.token = properties.token().trim();
@@ -150,7 +166,11 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
             }
             return List.of();
         }
-        Instant pollStarted = Instant.now();
+        Instant pollStarted = clock.instant();
+        if (liveConnected && lastPollAt != null && pollStarted.isBefore(lastPollAt.plus(pollWhileLive))) {
+            // Live updates already bring every change the moment it happens; polling is only the safety net.
+            return List.of();
+        }
         boolean ok = false;
         try {
             List<Map<String, Object>> states = client.get().uri("/states").retrieve().body(STATES);
