@@ -35,10 +35,10 @@ scp -r deploy purush@192.168.5.251:~/homehub-deploy
 Then on the hub:
 ```bash
 cd ~/homehub-deploy
-sudo bash setup-hub.sh      # service, folders, credentials, sudo rule, firewall
+sudo bash setup-hub.sh      # service, folders, credentials, sudo rule, firewall, nightly backup
 sudo bash setup-runner.sh   # GitHub runner for automatic deploys
 ```
-Re-run `setup-hub.sh` after any change to `install-release.sh` or `homehub.service` in git. The hub uses its
+Re-run `setup-hub.sh` after any change to `install-release.sh`, `backup.sh` or the systemd units in git. The hub uses its
 own copy in `/opt/homehub/bin`, which the runner can't modify.
 
 ### The GitHub runner (`setup-runner.sh`)
@@ -65,6 +65,60 @@ same `install-release.sh` (health check and rollback included):
 .\deploy.ps1 -Version v0.2.1 -Hub purush@home-hub
 ```
 It asks for your sudo password on the hub. Installing a version that already exists replaces that release.
+
+## Backups
+Every night at 03:00 `homehub-backup.timer` runs `/opt/homehub/bin/backup.sh`, which writes one archive:
+`/var/backups/homehub/kudil-backup-YYYY-MM-DD.tar.gz`. It contains:
+- `kudil/homehub.db`: all events, copied with SQLite's online backup (safe while Kudil runs, includes the
+  `-wal` file) and checked with `PRAGMA integrity_check`
+- `homeassistant/`: Home Assistant's configuration (`.storage`, YAML files, `secrets.yaml`) and a checked copy of
+  its history database; logs and caches are left out
+
+The newest 14 archives are kept (`KEEP`); a failed backup never removes older ones. If the hub was off at 03:00,
+the backup runs soon after it starts. Each archive is a few MB.
+
+The archives hold Home Assistant's `secrets.yaml` and your home's history, so they are root-only (folder `0700`,
+files `0600`). Keep any copy just as private. Kudil's own token and PIN in `/etc/homehub/credentials` are **not**
+backed up; after a rebuild, create a new Home Assistant token and set the PIN again (see *Secrets*).
+
+**Also keep the archives off the hub's disk**: a disk failure takes `/var/backups` with it. With a USB disk
+mounted (for example at `/media/backup`), put this line in `/etc/homehub/backup.env` (`sudo nano /etc/homehub/backup.env`):
+```
+COPY_TO=/media/backup
+```
+If that folder is missing when the backup runs, the backup fails (rather than filling the hub's disk).
+
+Useful commands:
+```bash
+sudo systemctl start homehub-backup                 # back up now
+journalctl -u homehub-backup -n 20                  # how the last backups went
+systemctl list-timers homehub-backup                # when the next one runs
+sudo ls -l /var/backups/homehub                     # the archives
+cat /var/lib/homehub-backup/last-success            # time of the last good backup
+```
+
+### Restoring
+Unpack the archive you want:
+```bash
+sudo mkdir /root/restore
+sudo tar -C /root/restore -xzf /var/backups/homehub/kudil-backup-2026-11-09.tar.gz
+```
+Kudil's events. Stop the service, and remove the `-wal` and `-shm` files first: a leftover `-wal` belongs to the
+old database and would damage the restored one.
+```bash
+sudo systemctl stop homehub
+sudo rm -f /opt/homehub/data/homehub.db-wal /opt/homehub/data/homehub.db-shm
+sudo install -o homehub -g homehub -m 0644 /root/restore/kudil/homehub.db /opt/homehub/data/homehub.db
+sudo systemctl start homehub
+```
+Home Assistant:
+```bash
+sudo docker stop homeassistant
+sudo rm -f /opt/homeassistant/home-assistant_v2.db-wal /opt/homeassistant/home-assistant_v2.db-shm
+sudo cp -a /root/restore/homeassistant/. /opt/homeassistant/
+sudo docker start homeassistant
+```
+Then `sudo rm -rf /root/restore`.
 
 ## Secrets
 Never in git, issues, pull requests or chat.
