@@ -15,6 +15,7 @@ check() {   # check "description" command...
     if "${@:2}"; then echo "ok   - $1"; else echo "FAIL - $1"; failures=$((failures + 1)); fi
 }
 fails() { ! "$@"; }
+archives() { find "$1" -maxdepth 1 -name 'kudil-backup-*.tar.gz' -printf '%f\n' | sort | tr '\n' ' '; }
 count() { sqlite3 -batch -init /dev/null "$1" "SELECT count(*) FROM events;"; }
 
 mkdir -p "$T/data" "$T/ha/.storage" "$T/ha/.cache" "$T/out" "$T/usb"
@@ -68,9 +69,9 @@ for d in 01 02 03 04 05; do touch "$T/out/kudil-backup-2020-01-$d.tar.gz" "$T/us
 touch "$T/out/notes.txt"
 check "backup with a copy to a USB folder succeeds" run COPY_TO="$T/usb"
 check "keeps the 3 newest archives" \
-    test "$(ls "$T/out"/kudil-backup-*.tar.gz | xargs -n1 basename | tr '\n' ' ')" = "kudil-backup-2020-01-04.tar.gz kudil-backup-2020-01-05.tar.gz $today "
+    test "$(archives "$T/out")" ="kudil-backup-2020-01-04.tar.gz kudil-backup-2020-01-05.tar.gz $today "
 check "keeps the 3 newest archives on the USB folder too" \
-    test "$(ls "$T/usb"/kudil-backup-*.tar.gz | xargs -n1 basename | tr '\n' ' ')" = "kudil-backup-2020-01-04.tar.gz kudil-backup-2020-01-05.tar.gz $today "
+    test "$(archives "$T/usb")" ="kudil-backup-2020-01-04.tar.gz kudil-backup-2020-01-05.tar.gz $today "
 check "the USB copy is complete" cmp -s "$T/out/$today" "$T/usb/$today"
 check "other files are left alone" test -f "$T/out/notes.txt"
 
@@ -80,7 +81,8 @@ kept=$(ls "$T/out")
 check "a missing USB disk fails the backup" fails run COPY_TO="$T/not-mounted"
 check "...and says why" grep -q "not mounted" "$T/log"
 check "a bad KEEP value fails the backup" fails run KEEP=0
-kill "$writer" && wait "$writer" 2>/dev/null || true
+kill "$writer" 2>/dev/null || true
+wait "$writer" 2>/dev/null || true
 writer=
 head -c 8192 < <(yes 'not a database') > "$T/data/homehub.db"
 rm -f "$T/data/homehub.db-wal" "$T/data/homehub.db-shm"
