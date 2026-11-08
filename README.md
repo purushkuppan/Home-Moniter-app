@@ -71,6 +71,16 @@ Non-secret settings live in [`src/main/resources/application.properties`](src/ma
 Any of these can be overridden on the command line, for example
 `.\mvnw.cmd spring-boot:run "-Dspring-boot.run.arguments=--homehub.connectors.fake.enabled=false --homehub.connectors.homeassistant.enabled=true"`.
 
+## Database
+
+Events are stored in SQLite: `data/homehub.db` locally, `/opt/homehub/data/homehub.db` on the hub
+([ADR 2](docs/adr/0002-sqlite-for-v1.md)).
+
+- The schema comes from Flyway migrations in [`src/main/resources/db/migration`](src/main/resources/db/migration),
+  run at startup. To change it, add a new `V<n>__what.sql`; never edit one that has been released.
+- SQLite runs in WAL mode, so `homehub.db-wal` and `homehub.db-shm` appear next to the database. Back up with
+  `sqlite3 homehub.db ".backup backup.db"` (or `VACUUM INTO`), not by copying the file.
+
 ## Alerts
 
 HomeHub warns when something needs attention. Details and trade-offs: [ADR 5](docs/adr/0005-alerts-through-home-assistant-notify.md).
