@@ -69,9 +69,9 @@ for d in 01 02 03 04 05; do touch "$T/out/kudil-backup-2020-01-$d.tar.gz" "$T/us
 touch "$T/out/notes.txt"
 check "backup with a copy to a USB folder succeeds" run COPY_TO="$T/usb"
 check "keeps the 3 newest archives" \
-    test "$(archives "$T/out")" ="kudil-backup-2020-01-04.tar.gz kudil-backup-2020-01-05.tar.gz $today "
+    test "$(archives "$T/out")" = "kudil-backup-2020-01-04.tar.gz kudil-backup-2020-01-05.tar.gz $today "
 check "keeps the 3 newest archives on the USB folder too" \
-    test "$(archives "$T/usb")" ="kudil-backup-2020-01-04.tar.gz kudil-backup-2020-01-05.tar.gz $today "
+    test "$(archives "$T/usb")" = "kudil-backup-2020-01-04.tar.gz kudil-backup-2020-01-05.tar.gz $today "
 check "the USB copy is complete" cmp -s "$T/out/$today" "$T/usb/$today"
 check "other files are left alone" test -f "$T/out/notes.txt"
 
