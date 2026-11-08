@@ -26,7 +26,8 @@ class AlertNotifierTests {
             "Fridge door has been open for 1 minute", Instant.parse("2026-11-06T18:01:00Z"));
 
     private static AlertProperties settings(List<String> notify, String link) {
-        return new AlertProperties(notify, link, Map.of(), Map.of(), Duration.ofMinutes(15), List.of(), Map.of(), null);
+        return new AlertProperties(notify, link, Map.of(), Map.of(), Duration.ofMinutes(15), List.of(), Map.of(), null,
+                null, null, null, null);
     }
 
     @Test

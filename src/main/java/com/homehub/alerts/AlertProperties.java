@@ -1,6 +1,7 @@
 package com.homehub.alerts;
 
 import java.time.Duration;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Map;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -24,6 +25,12 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * @param offline    per device (the part before "/", e.g. {@code Refrigerator}): how long all its readings may be
  *                   unavailable before it is reported offline
  * @param connectionLostAfter how long Home Assistant may be unreachable before the dashboard says so
+ * @param freezeBelow a freeze warning when tomorrow's forecast low is at or below this (Home Assistant's unit, e.g.
+ *                    32 for °F); empty: no freeze warnings
+ * @param freezeCheck local time of the daily freeze check, normally 19:00
+ * @param rainFrom    a rain notice when today's forecast has at least this much rain or snow (Home Assistant's unit,
+ *                    e.g. 0.1 for inches); empty: no rain notices
+ * @param rainCheck   local time of the daily rain check, normally 07:00
  */
 @ConfigurationProperties("homehub.alerts")
 public record AlertProperties(
@@ -34,11 +41,17 @@ public record AlertProperties(
         @DefaultValue("15m") Duration tooWarmFor,
         List<String> finished,
         Map<String, Duration> offline,
-        @DefaultValue("10m") Duration connectionLostAfter) {
+        @DefaultValue("10m") Duration connectionLostAfter,
+        Double freezeBelow,
+        @DefaultValue("19:00") LocalTime freezeCheck,
+        Double rainFrom,
+        @DefaultValue("07:00") LocalTime rainCheck) {
 
     public AlertProperties {
         offline = offline == null ? Map.of() : Map.copyOf(offline);
         if (connectionLostAfter == null) connectionLostAfter = Duration.ofMinutes(10);
+        if (freezeCheck == null) freezeCheck = LocalTime.of(19, 0);
+        if (rainCheck == null) rainCheck = LocalTime.of(7, 0);
         sendTo = sendTo == null ? List.of() : sendTo.stream().map(String::trim).filter(s -> !s.isEmpty()).toList();
         link = link == null ? "" : link.trim();
         doorOpen = doorOpen == null ? Map.of() : Map.copyOf(doorOpen);

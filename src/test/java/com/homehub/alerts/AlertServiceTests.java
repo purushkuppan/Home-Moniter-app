@@ -10,6 +10,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.time.LocalTime;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -45,6 +46,10 @@ class AlertServiceTests {
         assertThat(settings.sendTo()).as("phones are set for the hub only").isEmpty();
         assertThat(settings.offline()).containsExactly(java.util.Map.entry("Refrigerator", Duration.ofMinutes(30)));
         assertThat(settings.connectionLostAfter()).isEqualTo(Duration.ofMinutes(10));
+        assertThat(settings.freezeBelow()).isEqualTo(32.0);
+        assertThat(settings.freezeCheck()).isEqualTo(LocalTime.of(19, 0));
+        assertThat(settings.rainFrom()).isEqualTo(0.1);
+        assertThat(settings.rainCheck()).isEqualTo(LocalTime.of(7, 0));
     }
 
     @Test

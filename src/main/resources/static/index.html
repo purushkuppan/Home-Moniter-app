@@ -103,6 +103,29 @@
   }
   .alert-item .since { margin-left: auto; font-size: 12px; font-weight: 400; opacity: .85; white-space: nowrap; }
 
+  /* Weather card */
+  .weather {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 14px 24px; margin-bottom: 24px; padding: 16px 18px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow);
+  }
+  .weather[hidden] { display: none; }
+  .weather-now { display: flex; align-items: center; gap: 12px; }
+  .weather-now svg.icon { width: 42px; height: 42px; color: var(--accent); }
+  .weather-temp { font-size: 30px; font-weight: 700; line-height: 1; letter-spacing: -.02em; }
+  .weather-cond { font-weight: 600; }
+  .weather-meta { color: var(--muted); font-size: 13px; }
+  .weather-meta.stale { color: var(--warn); }
+  .weather-days { display: flex; gap: 8px; margin-left: auto; }
+  .weather-day {
+    display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 84px; padding: 8px 10px;
+    border-radius: 10px; background: var(--surface-2); font-size: 13px;
+  }
+  .weather-day .name { color: var(--muted); font-weight: 600; }
+  .weather-day svg.icon { color: var(--accent); }
+  .weather-day .hilo { font-weight: 600; white-space: nowrap; }
+  .weather-day .rain { color: var(--active); font-size: 12px; white-space: nowrap; }
+  .weather-credit { flex-basis: 100%; margin-top: -6px; color: var(--muted); font-size: 11px; }
+
   /* Section titles */
   h2 {
     font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em;
@@ -243,6 +266,9 @@
     .tab-panel { display: none; }
     .tab-panel.active { display: block; }
     .cards { grid-template-columns: 1fr; gap: 12px; margin-bottom: 20px; }
+    .weather { margin-bottom: 20px; padding: 14px; }
+    .weather-days { margin-left: 0; width: 100%; }
+    .weather-day { flex: 1; min-width: 0; padding: 8px 4px; }
 
     /* Text of at least 16px stops iPhones from zooming in when a field is tapped */
     .control select, .search input, dialog input { font-size: 16px; }
@@ -297,6 +323,7 @@
   <section class="alerts" id="alerts" aria-live="polite" hidden></section>
 
   <div class="tab-panel" data-tab="status">
+  <section class="weather" id="weather" aria-label="Weather" hidden></section>
   <h2>Current status</h2>
   <section class="cards" id="cards"></section>
   </div>
@@ -365,6 +392,16 @@ const ICONS = {
   lock:    '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
   thermo:  '<path d="M14 14.8V5a2 2 0 0 0-4 0v9.8a4 4 0 1 0 4 0z"/>',
   bell:    '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
+  // Weather
+  sun:     '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  moon:    '<path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>',
+  cloud:   '<path d="M17.5 19H8a5 5 0 1 1 1-9.9A6 6 0 0 1 20 11a4 4 0 0 1-2.5 8z"/>',
+  partly:  '<path d="M8 2v1.5M2.5 8H4M4.1 4.1l1 1M11.9 4.1l-1 1"/><path d="M5.2 10.5A3.5 3.5 0 1 1 11.6 7"/><path d="M17.5 21H9a4 4 0 1 1 .9-7.9A5 5 0 0 1 19 15a3 3 0 0 1-1.5 6z"/>',
+  rain:    '<path d="M17.5 15H8a5 5 0 1 1 1-9.9A6 6 0 0 1 20 7a4 4 0 0 1-2.5 8z"/><path d="M8 18v3M12 18v3M16 18v3"/>',
+  snow:    '<path d="M17.5 15H8a5 5 0 1 1 1-9.9A6 6 0 0 1 20 7a4 4 0 0 1-2.5 8z"/><path d="M8 19h.01M12 21h.01M16 19h.01"/>',
+  storm:   '<path d="M17.5 15H8a5 5 0 1 1 1-9.9A6 6 0 0 1 20 7a4 4 0 0 1-2.5 8z"/><path d="m13 14-3 4h4l-3 4"/>',
+  fog:     '<path d="M4 9h16M3 13h18M5 17h14M8 5h8"/>',
+  wind:    '<path d="M3 8h10a3 3 0 1 0-3-3M3 12h15a3 3 0 1 1-3 3M3 16h7"/>',
   device:  '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>'
 };
 
@@ -595,8 +632,68 @@ function renderAll(newIds) {
 }
 
 /** Full reload of the latest 50 events. Used at start, after every reconnect and as a slow safety net. */
+// ---------------------------------------------------------------- weather
+
+// Home Assistant weather conditions -> icon and label.
+const WEATHER = {
+  'clear-night': ['moon', 'Clear'], sunny: ['sun', 'Sunny'], partlycloudy: ['partly', 'Partly cloudy'],
+  cloudy: ['cloud', 'Cloudy'], fog: ['fog', 'Fog'], rainy: ['rain', 'Rain'], pouring: ['rain', 'Heavy rain'],
+  snowy: ['snow', 'Snow'], 'snowy-rainy': ['snow', 'Sleet'], hail: ['snow', 'Hail'],
+  lightning: ['storm', 'Thunderstorms'], 'lightning-rainy': ['storm', 'Thunderstorms'],
+  windy: ['wind', 'Windy'], 'windy-variant': ['wind', 'Windy'], exceptional: ['storm', 'Severe weather']
+};
+const weekdayShort = new Intl.DateTimeFormat(undefined, { weekday: 'short' });
+
+async function loadWeather() {
+  try {
+    const res = await fetch('/api/weather', { cache: 'no-store' });
+    if (res.status === 204) { $('weather').hidden = true; return; }
+    if (res.ok) renderWeather(await res.json());
+  } catch (err) { /* offline: keep what is shown */ }
+}
+
+function renderWeather(w) {
+  const box = $('weather');
+  const [iconName, label] = WEATHER[w.condition] || ['cloud', w.condition ? w.condition.replace(/[-_]/g, ' ') : ''];
+  const deg = t => t == null ? '–' : Math.round(t) + '°';
+  const unit = (w.temperatureUnit || '').replace('°', '');
+
+  const now = el('div', 'weather-now');
+  if (w.temperature == null || !WEATHER[w.condition]) {
+    now.append(icon('cloud'), el('div', 'weather-cond', 'Weather unavailable right now'));
+  } else {
+    const text = el('div');
+    const parts = [];
+    if (w.humidity != null) parts.push('Humidity ' + Math.round(w.humidity) + '%');
+    if (w.windSpeed != null) parts.push('Wind ' + Math.round(w.windSpeed) + ' ' + (w.windSpeedUnit || ''));
+    text.append(el('div', 'weather-cond', label), el('div', 'weather-meta', parts.join(' · ')));
+    now.append(icon(iconName), el('div', 'weather-temp', deg(w.temperature) + unit), text);
+  }
+
+  const days = el('div', 'weather-days');
+  (w.days || []).forEach((d, i) => {
+    const [dayIcon, dayLabel] = WEATHER[d.condition] || ['cloud', d.condition || ''];
+    const card = el('div', 'weather-day');
+    card.title = dayLabel;
+    card.append(el('span', 'name', i === 0 ? 'Today' : weekdayShort.format(new Date(d.time))), icon(dayIcon),
+                el('span', 'hilo', deg(d.high) + ' / ' + deg(d.low)));
+    if (d.precipitation > 0) card.append(el('span', 'rain', Number(d.precipitation.toFixed(2)) + ' ' + (w.precipitationUnit || '')));
+    days.append(card);
+  });
+
+  const children = [now, days];
+  if (w.stale) {
+    children.push(el('div', 'weather-meta stale', 'Last updated ' + sinceText(new Date(w.fetchedAt))
+      + ': Home Assistant is not reachable'));
+  }
+  if (w.attribution) children.push(el('div', 'weather-credit', w.attribution));
+  box.replaceChildren(...children);
+  box.hidden = false;
+}
+
 async function load() {
   loadAlerts();   // in parallel: the banner shouldn't wait for the activity list
+  loadWeather();  // the server keeps it for 10 minutes, so asking often is cheap
   try {
     const [res, latestRes] = await Promise.all([
       fetch('/api/events', { cache: 'no-store' }),

@@ -47,6 +47,12 @@ Non-secret settings live in [`src/main/resources/application.properties`](src/ma
 | `homehub.alerts.finished` | `Washer,Dryer` | Machines to report when their cycle ends |
 | `homehub.alerts.offline.[device]` | Refrigerator `30m` | How long all of a device's readings may be unavailable before it is reported offline |
 | `homehub.alerts.connection-lost-after` | `10m` | How long Home Assistant may be unreachable before the dashboard says so |
+| `homehub.alerts.freeze-below` | `32` | Freeze warning when tomorrow's low is at or below this; empty = off |
+| `homehub.alerts.freeze-check` | `19:00` | Local time of the daily freeze check (`HH:mm`) |
+| `homehub.alerts.rain-from` | `0.1` | Rain notice when today's forecast has at least this much rain or snow; empty = off |
+| `homehub.alerts.rain-check` | `07:00` | Local time of the daily rain check (`HH:mm`) |
+| `homehub.weather.entity` | `weather.home` | Home Assistant weather entity for the dashboard card; empty = no card |
+| `homehub.weather.refresh` | `10m` | How long the weather is kept before asking Home Assistant again |
 
 Any of these can be overridden on the command line, for example
 `.\mvnw.cmd spring-boot:run "-Dspring-boot.run.arguments=--homehub.connectors.fake.enabled=false --homehub.connectors.homeassistant.enabled=true"`.
@@ -62,6 +68,8 @@ HomeHub warns when something needs attention. Details and trade-offs: [ADR 5](do
 | Cycle finished | Washer or dryer ends its cycle | – |
 | Device offline | All of the refrigerator's readings "unavailable" in Home Assistant for 30 minutes | "Refrigerator is back online. It was offline for 42 minutes." |
 | Home Assistant unreachable | No contact for 10 minutes. **Dashboard only**: phones are reached through Home Assistant | Phone: "Kudil lost Home Assistant for 25 minutes. Back now." |
+| Freeze warning | Checked at 19:00: tomorrow's forecast low at or below 32 °F. "Freeze warning: low of 28 °F tonight" | – |
+| Rain expected | Checked at 07:00: today's forecast has at least 0.1 in. "Rain expected today: 0.31 in" (or Snow) | – |
 
 - **Dashboard:** a red banner shows problems still going on. Every alert is listed in the activity list
   (Alert, All clear, Notice).
@@ -72,6 +80,18 @@ HomeHub warns when something needs attention. Details and trade-offs: [ADR 5](do
 - A problem that was already reported (a door, an offline device) is not reported again after a restart.
 - A quiet device is not offline: readings are only stored when they change, so the offline rule uses Home
   Assistant's "unavailable". If the hub itself loses power or Wi-Fi, nothing can be sent; see [ADR 7](docs/adr/0007-offline-and-connection-alerts.md).
+- Weather notices use the forecast from the weather card, at the hub's local time, once a day each. A check
+  missed while Kudil was restarting runs as soon as it is back, up to 3 hours late, and a restart never repeats
+  one. Limits are in Home Assistant's units (°F and inches here; with °C and mm use e.g. `0` and `2`).
+
+## Weather
+
+The Status section starts with the weather: now (condition, temperature, humidity, wind) and today plus the
+next two days (high/low, rain amount when some is expected). It comes from Home Assistant's weather entity
+(`weather.home`, from **met.no**, set up by Home Assistant itself): no API key, no extra service, no cost, and
+met.no allows commercial use with the credit line shown under the card. Kudil reads it on demand and keeps it
+for 10 minutes; weather is not stored as events. If Home Assistant can't be reached, the last result is shown
+with its time.
 
 ## Secrets
 
