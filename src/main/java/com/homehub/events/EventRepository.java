@@ -1,16 +1,11 @@
 package com.homehub.events;
 
-import jakarta.annotation.PostConstruct;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.sql.PreparedStatement;
 import java.sql.Statement;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -18,38 +13,20 @@ import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Repository;
 
+/** The events table. Flyway creates and changes its schema (src/main/resources/db/migration) before this runs. */
 @Repository
 public class EventRepository {
 
-    private static final String SQLITE_PREFIX = "jdbc:sqlite:";
     private static final RowMapper<Event> ROW_MAPPER = (rs, i) -> new Event(
             rs.getLong("id"), rs.getString("device"), rs.getString("type"),
             rs.getString("value"), Instant.parse(rs.getString("time")));
 
     private final JdbcTemplate jdbc;
-    private final String datasourceUrl;
     private final ApplicationEventPublisher publisher;
 
-    public EventRepository(JdbcTemplate jdbc, @Value("${spring.datasource.url}") String datasourceUrl,
-                           ApplicationEventPublisher publisher) {
+    public EventRepository(JdbcTemplate jdbc, ApplicationEventPublisher publisher) {
         this.jdbc = jdbc;
-        this.datasourceUrl = datasourceUrl;
         this.publisher = publisher;
-    }
-
-    @PostConstruct
-    void init() throws IOException {
-        createDatabaseFolder();
-        jdbc.execute("""
-                CREATE TABLE IF NOT EXISTS events (
-                    id     INTEGER PRIMARY KEY AUTOINCREMENT,
-                    device TEXT NOT NULL,
-                    type   TEXT NOT NULL,
-                    value  TEXT,
-                    time   TEXT NOT NULL
-                )""");
-        // Makes "latest value of this device reading" a quick lookup for saveIfChanged.
-        jdbc.execute("CREATE INDEX IF NOT EXISTS idx_events_device_type ON events (device, type, id)");
     }
 
     /**
@@ -66,17 +43,6 @@ public class EventRepository {
             return Optional.empty();
         }
         return Optional.of(save(event));
-    }
-
-    /** SQLite creates the file but not its folder, so create the folder named in the datasource URL. */
-    private void createDatabaseFolder() throws IOException {
-        if (!datasourceUrl.startsWith(SQLITE_PREFIX)) return;
-        String file = datasourceUrl.substring(SQLITE_PREFIX.length());
-        int query = file.indexOf('?');
-        if (query >= 0) file = file.substring(0, query);
-        if (file.isBlank() || file.startsWith(":memory:") || file.startsWith("file:")) return;
-        Path parent = Path.of(file).toAbsolutePath().getParent();
-        if (parent != null) Files.createDirectories(parent);
     }
 
     /** Saves an event stamped with the current time. */
