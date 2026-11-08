@@ -1,15 +1,19 @@
 name: Release and deploy
 
-# Push a version tag (for example: git tag v0.3.2 && git push origin v0.3.2) to build,
-# publish a GitHub Release, and deploy to the home hub through its self-hosted runner.
-# Only tags trigger this workflow, never pull requests: the hub's runner must not run code from PRs.
+# Every merge to main is built, published as a GitHub Release with the next version number, and deployed to the
+# home hub through its self-hosted runner. Pushing a version tag (git tag v0.6.0 && git push origin v0.6.0) still
+# makes a release by hand.
+# Pull requests never trigger this workflow: the hub's runner must not run code from PRs.
 on:
   push:
+    branches: [main]
     tags: ['v*']
 
 permissions:
   contents: read
 
+# One release at a time, in order. If several merges land while one deploys, only the newest waits; it contains
+# the others.
 concurrency:
   group: deploy-home-hub
   cancel-in-progress: false
@@ -18,24 +22,63 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write   # to create the GitHub Release
+      contents: write   # to create the tag and the GitHub Release
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0   # all commits and tags, to choose the next version
+      - name: Choose the version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            version="$GITHUB_REF_NAME"                      # a tag pushed by hand
+          else
+            version="$(git tag --points-at HEAD --list 'v*' | sort -V | tail -n 1)"   # a re-run of this commit
+            if [[ -z "$version" ]]; then
+              last="$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -n 1)"
+              range="HEAD"
+              [[ -n "$last" ]] && range="$last..HEAD"
+              IFS=. read -r major minor patch <<< "${last:-v0.0.0}"
+              major="${major#v}"
+              # A new feature since the last release: next minor version. Anything else: next patch version.
+              if git log --format=%s "$range" | grep -qE '^feat(\([^)]*\))?!?:'; then
+                version="v$major.$((minor + 1)).0"
+              else
+                version="v$major.$minor.$((patch + 1))"
+              fi
+            fi
+          fi
+          if [[ ! "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Not a release version: $version"
+            exit 1
+          fi
+          echo "Version: $version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '25'
           cache: maven
       - name: Build and test
-        run: bash ./mvnw -B -ntp verify
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: bash ./mvnw -B -ntp verify -Drevision="${VERSION#v}"
       - name: Prepare the jar
         run: |
           mkdir -p dist
           cp target/homehub-*.jar dist/homehub.jar
-      - name: Create the GitHub Release
+      - name: Create the tag and the GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/homehub.jar --generate-notes --title "$GITHUB_REF_NAME"
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if gh release view "$VERSION" > /dev/null 2>&1; then
+            echo "Release $VERSION already exists (a re-run)."
+          else
+            gh release create "$VERSION" dist/homehub.jar --target "$GITHUB_SHA" --generate-notes --title "$VERSION"
+          fi
       - uses: actions/upload-artifact@v7
         with:
           name: homehub-release
@@ -48,17 +91,19 @@ jobs:
     if: github.repository == 'purushkuppan/Home-Moniter-app'
     runs-on: [self-hosted, linux, home-hub]
     timeout-minutes: 15
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
     steps:
       - name: Deploy only versions newer than the one running
         id: check
         run: |
           current="$(basename "$(readlink -f /opt/homehub/current 2>/dev/null)" 2>/dev/null || true)"
-          newest="$(printf '%s\n%s\n' "$current" "$GITHUB_REF_NAME" | sort -V | tail -n 1)"
-          if [[ "$current" =~ ^v[0-9] && ( "$GITHUB_REF_NAME" == "$current" || "$newest" != "$GITHUB_REF_NAME" ) ]]; then
-            echo "::notice::Not deploying $GITHUB_REF_NAME: the hub already runs $current."
+          newest="$(printf '%s\n%s\n' "$current" "$VERSION" | sort -V | tail -n 1)"
+          if [[ "$current" =~ ^v[0-9] && ( "$VERSION" == "$current" || "$newest" != "$VERSION" ) ]]; then
+            echo "::notice::Not deploying $VERSION: the hub already runs $current."
             echo "deploy=false" >> "$GITHUB_OUTPUT"
           else
-            echo "Deploying $GITHUB_REF_NAME (running: ${current:-none})."
+            echo "Deploying $VERSION (running: ${current:-none})."
             echo "deploy=true" >> "$GITHUB_OUTPUT"
           fi
       - if: steps.check.outputs.deploy == 'true'
@@ -67,4 +112,4 @@ jobs:
           name: homehub-release
       - name: Install, restart and health-check (rolls back on failure)
         if: steps.check.outputs.deploy == 'true'
-        run: sudo /opt/homehub/bin/install-release.sh "$PWD/homehub.jar" "$GITHUB_REF_NAME"
+        run: sudo /opt/homehub/bin/install-release.sh "$PWD/homehub.jar" "$VERSION"

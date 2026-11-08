@@ -1,9 +1,13 @@
 # Deploying HomeHub to home-hub
 
 ## How a release reaches the hub (automatic)
-1. Merge pull requests into `main`. CI checks the hub scripts and builds and tests every PR.
-2. Tag a version from an up-to-date `main`: `git tag v0.3.2 && git push origin v0.3.2`
-3. GitHub Actions (`.github/workflows/release.yml`) builds and tests the jar in the cloud and creates a GitHub Release.
+1. Merge a pull request into `main`. CI checks the hub scripts and builds and tests every PR. Nothing else to do.
+2. GitHub Actions (`.github/workflows/release.yml`) picks the next version from the newest `v*` tag: the next
+   **minor** version when a merged commit is a `feat:` (v0.4.1 → v0.5.0), otherwise the next **patch** version
+   (v0.5.0 → v0.5.1). It builds and tests the jar in the cloud with that version stamped in (the dashboard shows
+   it), then creates the tag and a GitHub Release. A version tag pushed by hand
+   (`git tag v0.6.0 && git push origin v0.6.0`) still makes a release too.
+3. Several merges in quick succession are deployed one at a time; the newest one waiting includes the others.
 4. The self-hosted runner on `home-hub` downloads the jar and runs
    `/opt/homehub/bin/install-release.sh`, which:
    - installs it to `/opt/homehub/releases/<version>`
@@ -17,8 +21,8 @@ Follow it under **Actions** on GitHub (or `gh run watch`).
 
 The runner connects out to GitHub, so no router ports are opened. It runs as the user `ghrunner`, which may
 run only `install-release.sh` as root. That script reads the jar with `ghrunner`'s own rights and accepts
-only jar files, so it can't be used to copy root-only files. Only tags pushed to the repository trigger a
-deploy, never pull requests.
+only jar files, so it can't be used to copy root-only files. Only merges to `main` and version tags pushed
+to the repository trigger a deploy, never pull requests.
 
 **Keep the repository private.** On a public repository, strangers' pull requests could run code on a
 self-hosted runner.

@@ -1,6 +1,6 @@
 # 6. Automatic deploys with a self-hosted GitHub runner on the hub
 
-Date: 2026-11-06 · Status: accepted
+Date: 2026-11-06 · Status: accepted · Changed by: [ADR 9](0009-deploy-on-every-merge.md) (a merge to `main` deploys, no tag needed)
 
 ## Context
 Releases went out with `deploy.ps1` from the PC. That depends on whoever runs it being on the right,

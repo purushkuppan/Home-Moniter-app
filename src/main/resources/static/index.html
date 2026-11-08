@@ -70,6 +70,8 @@
   }
   .brand h1 { margin: 0; font-size: 18px; letter-spacing: -.01em; }
   .brand p { margin: 0; color: var(--muted); font-size: 13px; }
+  /* The running release, on every screen size (phones hide the header subtitle). */
+  .app-version { margin: 24px 0 8px; text-align: center; color: var(--muted); font-size: 12px; }
   .live {
     margin-left: auto;
     display: flex; align-items: center; gap: 8px;
@@ -317,7 +319,7 @@
     <div class="logo"><svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3 2 11h3v9h5v-6h4v6h5v-9h3z"/></svg></div>
     <div class="brand">
       <h1>Kudil</h1>
-      <p>Home appliance monitor</p>
+      <p>Home appliance monitor<span id="appVersion"></span></p>
     </div>
     <div class="live" id="live"><span class="dot"></span><span id="status">Connecting…</span></div>
     <div class="unit-switch" id="unitSwitch" role="group" aria-label="Temperature unit" title="Show temperatures in °F or °C">
@@ -381,6 +383,7 @@
     <div class="footer"><span id="count"></span><span>Live updates</span></div>
   </section>
   </div>
+  <p class="app-version">Kudil <span id="footerVersion"></span></p>
 </main>
 
 <dialog id="pinDialog">
@@ -815,13 +818,21 @@ async function checkVersion() {
   try {
     const res = await fetch('/api/version', { cache: 'no-store' });
     if (!res.ok) return;
-    const { started } = await res.json();
+    const { started, version } = await res.json();
     if (serverStarted && started !== serverStarted) {
       if (!$('pinDialog').open) location.reload();   // otherwise: reload on the next check
       return;
     }
     serverStarted = started;
+    showVersion(version);
   } catch (err) { /* offline: try again on the next reconnect */ }
+}
+
+/** "0.5.0" -> "v0.5.0"; a build from source ("0.0.1-SNAPSHOT", "dev") -> "dev". */
+function showVersion(version) {
+  const label = /^\d+\.\d+\.\d+$/.test(version || '') ? 'v' + version : 'dev';
+  $('appVersion').textContent = ' · ' + label;
+  $('footerVersion').textContent = label;
 }
 
 /** One event pushed by the server the moment it was saved. */

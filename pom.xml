@@ -10,7 +10,8 @@
 	</parent>
 	<groupId>com.homehub</groupId>
 	<artifactId>homehub</artifactId>
-	<version>0.0.1-SNAPSHOT</version>
+	<!-- Set by the release build (-Drevision=0.5.0), so the jar and /api/version know their release. -->
+	<version>${revision}</version>
 	<name>homehub</name>
 	<description/>
 	<url/>
@@ -28,6 +29,7 @@
 	</scm>
 	<properties>
 		<java.version>25</java.version>
+		<revision>0.0.1-SNAPSHOT</revision>
 	</properties>
 	<dependencies>
 		<dependency>
