@@ -219,15 +219,87 @@
   .settings-list .value { color: var(--muted); font-size: 14px; }
   .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
-  /* Alerts banner: problems going on right now */
-  .alerts { display: grid; gap: 8px; margin: 0 0 20px; }
-  .alerts[hidden] { display: none; }
-  .alert-item {
-    display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: var(--radius);
-    background: var(--bad-soft); color: var(--bad); font-weight: 600;
-    border: 1px solid color-mix(in srgb, var(--bad) 35%, transparent);
+  /* Home: the status card says in one line whether the house is OK */
+  .status-card {
+    display: flex; flex-direction: column; gap: 14px; margin-bottom: 20px; padding: 18px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 20px; box-shadow: var(--shadow);
   }
-  .alert-item .since { margin-left: auto; font-size: 12px; font-weight: 400; opacity: .85; white-space: nowrap; }
+  .status-main { display: flex; align-items: center; gap: 12px; }
+  .status-icon { display: grid; place-items: center; flex: none; width: 44px; height: 44px; border-radius: 50%; }
+  .status-icon svg.icon { width: 22px; height: 22px; }
+  .status-card.ok .status-icon { background: var(--ok-soft); color: var(--ok); }
+  .status-card.warn .status-icon { background: var(--warn-soft); color: var(--warn); }
+  .status-card.bad .status-icon { background: var(--bad-soft); color: var(--bad); }
+  .status-title { font-family: var(--font-heading); font-size: 20px; font-weight: 600; line-height: 1.25; }
+  .status-sub { color: var(--muted); font-size: 13px; }
+  .status-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .status-chip { padding: 6px 10px; border-radius: 999px; background: var(--surface-2); font-size: 13px; }
+  .status-chip.warn { background: var(--warn-soft); color: var(--warn); font-weight: 600; }
+  .status-chip.info { background: var(--info-soft); color: var(--info); }
+  .alert-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+  .alert-item {
+    display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px;
+    background: var(--bad-soft); color: var(--bad); font-weight: 600;
+  }
+  .alert-item .since { margin-left: auto; font-size: 12px; font-weight: 400; white-space: nowrap; }
+
+  /* Quick controls: one tile per appliance action, its state in plain words */
+  .quick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; margin-bottom: 24px; }
+  .quick-tile {
+    display: flex; flex-direction: column; gap: 10px; padding: 14px; text-align: left;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 18px; color: var(--text); font: inherit;
+  }
+  button.quick-tile { cursor: pointer; }
+  button.quick-tile:hover { border-color: var(--accent); }
+  .quick-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .quick-top svg.icon { width: 22px; height: 22px; }
+  .quick-state { font-size: 12px; font-weight: 600; }
+  .quick-name { display: block; font-size: 15px; font-weight: 600; }
+  .quick-sub { display: block; font-size: 12px; color: var(--muted); }
+  .quick-value { font-family: var(--font-heading); font-size: 26px; font-weight: 600; letter-spacing: -.02em; line-height: 1.1; }
+  .quick-tile .btn { min-height: var(--tap); border-radius: 12px; background: var(--surface-2); font-weight: 600; font-size: 14px; }
+  .tone-ok { color: var(--ok); }
+  .tone-warn { color: var(--warn); }
+  .tone-info { color: var(--info); }
+  .tone-bad { color: var(--bad); }
+  .tone-idle { color: var(--muted); }
+
+  /* Appliances: one line each, details one tap away */
+  .appliances, .today {
+    list-style: none; margin: 0 0 24px; padding: 0 14px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 18px; box-shadow: var(--shadow);
+  }
+  .appliances > li + li, .today > li + li { border-top: 1px solid var(--border); }
+  .appliances summary {
+    display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 8px 0; cursor: pointer; list-style: none;
+  }
+  .appliances summary::-webkit-details-marker { display: none; }
+  .appliances summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 8px; }
+  .appliance-icon { display: grid; place-items: center; flex: none; width: 36px; height: 36px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); }
+  .appliance-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .appliance-name { font-size: 15px; font-weight: 600; }
+  .appliance-sub { font-size: 12px; color: var(--muted); }
+  .appliance-state { font-size: 14px; font-weight: 600; text-align: right; }
+  .chevron { flex: none; width: 18px; height: 18px; color: var(--muted); transition: transform .15s; }
+  details[open] .chevron { transform: rotate(90deg); }
+  .appliance-detail { padding: 0 0 12px 48px; }
+  .empty-line { padding: 18px 0; color: var(--muted); text-align: center; }
+
+  /* Today: the latest events in plain words */
+  .today > li { display: flex; align-items: flex-start; gap: 12px; padding: 12px 0; }
+  .tl-dot { flex: none; width: 8px; height: 8px; margin-top: 7px; border-radius: 50%; background: var(--idle); }
+  .tl-dot.ok { background: var(--ok); }
+  .tl-dot.warn { background: var(--warn); }
+  .tl-dot.info { background: var(--info); }
+  .tl-dot.bad { background: var(--bad); }
+  .tl-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .tl-title { font-size: 14px; font-weight: 500; }
+  .tl-sub, .tl-time { font-size: 12px; color: var(--muted); }
+  .tl-time { white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .link-btn {
+    border: 0; background: none; padding: 8px 0 8px 12px; min-height: var(--tap); color: var(--accent);
+    font: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
+  }
 
   /* Weather card */
   .weather {
@@ -375,7 +447,7 @@
   .empty-row td { text-align: center; color: var(--muted); padding: 40px 16px; }
   .footer { display: flex; justify-content: space-between; padding: 10px 16px; color: var(--muted); font-size: 12px; border-top: 1px solid var(--border); }
 
-  header .tabs { display: none; }
+  .tabs { display: none; }
 
   /* Touch screens of any size (tablets too): every control at least --tap high. */
   @media (pointer: coarse) {
@@ -390,13 +462,21 @@
     header { margin-bottom: 16px; }
     header .wrap { gap: 10px; padding-top: 10px; padding-bottom: 10px; }
 
-    /* Tabs: one section at a time */
-    header .tabs { display: flex; gap: 6px; padding-top: 0; padding-bottom: 10px; }
-    .tabs button {
-      flex: 1; min-height: var(--tap); border: 1px solid var(--border); border-radius: 999px;
-      background: var(--surface); color: var(--muted); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
+    /* Bottom navigation: one section at a time, within thumb reach */
+    body { padding-bottom: calc(68px + env(safe-area-inset-bottom)); }
+    .tabs {
+      display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); position: fixed; left: 0; right: 0; bottom: 0; z-index: 6;
+      padding: 6px 8px calc(6px + env(safe-area-inset-bottom)); background: var(--surface); border-top: 1px solid var(--border);
     }
-    .tabs button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+    .tabs button {
+      position: relative; display: flex; flex-direction: column; align-items: center; gap: 3px; min-height: 52px;
+      border: 0; background: none; color: var(--muted); font: inherit; font-size: 12px; font-weight: 500; cursor: pointer;
+    }
+    .tabs button svg.icon { width: 22px; height: 22px; }
+    .tabs button[aria-pressed="true"] { color: var(--accent); font-weight: 600; }
+    .nav-badge { position: absolute; top: 4px; left: calc(50% + 8px); width: 9px; height: 9px; border-radius: 50%; background: var(--bad); }
+    .nav-badge[hidden] { display: none; }
+    .toast { bottom: calc(80px + env(safe-area-inset-bottom)); }
     .tab-panel { display: none; }
     .tab-panel.active { display: block; }
     .cards { grid-template-columns: 1fr; gap: 12px; margin-bottom: 20px; }
@@ -448,22 +528,24 @@
       <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
     </button>
   </div>
-  <!-- Phones only: one section at a time instead of one very long page -->
-  <nav class="tabs wrap" id="tabs" aria-label="Sections">
-    <button type="button" data-tab="status">Status</button>
-    <button type="button" data-tab="controls">Controls</button>
-    <button type="button" data-tab="activity">Activity</button>
-  </nav>
 </header>
 
 <main class="wrap">
-  <!-- Shown on every tab while something needs attention (door left open, too warm) -->
-  <section class="alerts" id="alerts" aria-live="polite" hidden></section>
-
+  <!-- Home: is the house OK? (one status card), then quick controls, appliances and today's events -->
   <div class="tab-panel" data-tab="status">
+  <section class="status-card" id="statusCard" aria-live="polite" aria-label="Home status"></section>
   <section class="weather" id="weather" aria-label="Weather" hidden></section>
-  <h2>Current status</h2>
-  <section class="cards" id="cards"></section>
+  <div id="quickSection" hidden>
+    <h2>Quick controls</h2>
+    <section class="quick-grid" id="quick"></section>
+  </div>
+  <h2>Appliances</h2>
+  <ul class="appliances" id="cards"></ul>
+  <div class="section-head">
+    <h2>Today</h2>
+    <button class="link-btn" type="button" id="seeAll">See all</button>
+  </div>
+  <ol class="today" id="today"></ol>
   </div>
 
   <div class="tab-panel" data-tab="controls">
@@ -505,6 +587,22 @@
   </div>
   <p class="app-version">Kudil <span id="footerVersion"></span></p>
 </main>
+
+<!-- Phones: one section at a time, switched from the bottom of the screen. Wider screens show every section. -->
+<nav class="tabs" id="tabs" aria-label="Sections">
+  <button type="button" data-tab="status">
+    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg>
+    <span>Home</span><span class="nav-badge" id="homeBadge" hidden aria-label="needs attention"></span>
+  </button>
+  <button type="button" data-tab="controls">
+    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>
+    <span>Controls</span>
+  </button>
+  <button type="button" data-tab="activity">
+    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+    <span>Activity</span>
+  </button>
+</nav>
 
 <dialog id="pinDialog">
   <form id="pinForm">
@@ -775,53 +873,215 @@ function readingKey(e) {
   return (e.device + '|' + e.type).toLowerCase();   // "freezer" and "Freezer" are the same reading
 }
 
-function renderCards() {
-  const cards = $('cards');
-  // The last value of every reading, however old: from /api/events/latest plus live updates.
+/** The last value of every reading, grouped by appliance: from /api/events/latest plus live updates. */
+function appliances() {
   const devices = new Map();
   for (const e of [...current].sort((a, b) => b.id - a.id)) {
     if (NOT_READINGS.has(e.type)) continue;   // commands and alerts are shown in the activity list instead
     const { main, part } = splitDevice(e.device);
     const time = new Date(e.time);
-    if (!devices.has(main)) devices.set(main, { name: main, readings: new Map(), updated: time });
-    const device = devices.get(main);
+    const id = main.toLowerCase();
+    if (!devices.has(id)) devices.set(id, { name: main, readings: new Map(), updated: time });
+    const device = devices.get(id);
     if (time > device.updated) device.updated = time;
     const key = ((part ? part + ' ' : '') + e.type).toLowerCase();
     if (!device.readings.has(key)) {
       device.readings.set(key, {
         label: (part ? prettyType(part) + ' · ' : '') + prettyType(e.type).toLowerCase(),
-        type: e.type, value: e.value, time
+        part, type: e.type, value: e.value, time
       });
     }
   }
+  return [...devices.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
 
-  cards.replaceChildren();
-  if (devices.size === 0) {
-    cards.append(el('div', 'card empty-card', 'No devices have reported yet.'));
+const offlineAlert = name => activeAlerts.find(a => a.key.startsWith('offline:') && a.device.toLowerCase() === name.toLowerCase());
+const lower = v => (v ?? '').toString().toLowerCase();
+const IDLE_STATES = ['stop', 'none', 'idle', 'unknown', 'off', ''];
+
+/** One word or two for an appliance, its tone, and a line of detail: ["Running", "info", "Rinse"]. */
+function applianceSummary(d) {
+  const readings = [...d.readings.values()];
+  const offline = offlineAlert(d.name);
+  if (offline) return ['Offline', 'bad', 'Since ' + sinceText(new Date(offline.time))];
+  const temps = readings.filter(r => r.type === 'temperature')
+    .map(r => (r.part ? prettyType(r.part) + ' ' : '') + formatValue(r.type, (r.value ?? '').toString()));
+  const doors = readings.filter(r => r.type === 'contact');
+  const open = doors.filter(r => lower(r.value) === 'open');
+  if (open.length) return [open.length === 1 ? 'Door open' : open.length + ' doors open', 'warn',
+    open.map(r => prettyType(r.part || d.name)).join(', ') + ' · since ' + sinceText(open[0].time)];
+  const machine = readings.find(r => /machinestate$/i.test(r.type));
+  const job = readings.find(r => /jobstate$/i.test(r.type));
+  if (machine) {
+    const state = lower(machine.value);
+    const jobText = job && !IDLE_STATES.includes(lower(job.value)) ? formatValue(job.type, job.value) : '';
+    if (state === 'pause' || state === 'paused') return ['Paused', 'warn', jobText || 'Since ' + sinceText(machine.time)];
+    if (!IDLE_STATES.includes(state)) return ['Running', 'info', jobText || formatValue(machine.type, machine.value)];
+    return ['Idle', 'idle', 'Since ' + sinceText(machine.time)];
+  }
+  if (doors.length) return ['Closed', 'ok', temps.join(' · ') || 'Updated ' + timeAgo(d.updated)];
+  const first = readings[0];
+  return [first ? formatValue(first.type, (first.value ?? '').toString()) : '–', 'idle', 'Updated ' + timeAgo(d.updated)];
+}
+
+function chevron() {
+  const span = el('span');
+  span.innerHTML = '<svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>';
+  return span.firstChild;
+}
+
+const openAppliances = new Set();   // which appliances are expanded, kept across re-renders
+
+function renderCards() {
+  const list = $('cards');
+  const devices = appliances();
+  if (devices.length === 0) {
+    list.replaceChildren(el('li', 'empty-line', 'No appliances have reported yet.'));
+    renderStatus();
     return;
   }
-  for (const d of [...devices.values()].sort((a, b) => a.name.localeCompare(b.name))) {
-    const card = el('article', 'card');
-    const head = el('div', 'card-head');
-    const ic = el('div', 'card-icon'); ic.append(icon(iconFor(d.name)));
-    const titles = el('div');
-    const offline = activeAlerts.find(a => a.key.startsWith('offline:') && a.device.toLowerCase() === d.name.toLowerCase());
-    titles.append(el('div', 'card-title', d.name), offline
-      ? el('div', 'card-sub offline', 'Offline since ' + sinceText(new Date(offline.time)))
-      : el('div', 'card-sub', 'Updated ' + timeAgo(d.updated)));
-    head.append(ic, titles);
-    card.append(head);
+  list.replaceChildren(...devices.map(d => {
+    const [state, tone, sub] = applianceSummary(d);
+    const details = el('details');
+    details.open = openAppliances.has(d.name);
+    details.addEventListener('toggle', () => details.open ? openAppliances.add(d.name) : openAppliances.delete(d.name));
+    const summary = el('summary');
+    const ic = el('span', 'appliance-icon'); ic.append(icon(iconFor(d.name)));
+    const text = el('span', 'appliance-text');
+    text.append(el('span', 'appliance-name', d.name), el('span', 'appliance-sub', keepTogether(sub)));
+    summary.append(ic, text, el('span', 'appliance-state tone-' + tone, state), chevron());
+    const detail = el('div', 'appliance-detail');
     for (const r of [...d.readings.values()].sort((a, b) => a.label.localeCompare(b.label))) {
       const row = el('div', 'reading');
-      const text = el('div', 'reading-text');
+      const rowText = el('div', 'reading-text');
       const since = el('span', 'since', 'since ' + sinceText(r.time));
       since.title = dayFormat.format(r.time) + ', ' + clockFormat.format(r.time) + ' (' + timeAgo(r.time) + ')';
-      text.append(el('span', 'label', r.label.charAt(0).toUpperCase() + r.label.slice(1)), since);
-      row.append(text, badge(r.type, r.value));
-      card.append(row);
+      rowText.append(el('span', 'label', r.label.charAt(0).toUpperCase() + r.label.slice(1)), since);
+      row.append(rowText, badge(r.type, r.value));
+      detail.append(row);
     }
-    cards.append(card);
+    details.append(summary, detail);
+    const li = el('li');
+    li.append(details);
+    return li;
+  }));
+  renderStatus();
+}
+
+// ---------------------------------------------------------------- home: status card
+
+const STATUS_ICONS = {
+  ok: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/>',
+  warn: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 8v4M12 16h.01"/>',
+  bad: '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/>'
+};
+
+/** Is the house OK? One line, chips for doors and running appliances, and every problem going on right now. */
+function renderStatus() {
+  const box = $('statusCard');
+  const devices = appliances();
+  const summaries = devices.map(d => [d, applianceSummary(d)]);
+  const doors = current.filter(e => e.type === 'contact');
+  const doorsOpen = doors.filter(e => lower(e.value) === 'open')
+    .map(e => { const { main, part } = splitDevice(e.device); return prettyType(part || main); });
+  const hasDoors = doors.length > 0;
+
+  let tone = 'ok', title = 'All good';
+  if (activeAlerts.length) {
+    tone = 'bad';
+    title = activeAlerts.length === 1 ? 'Needs attention' : activeAlerts.length + ' things need attention';
+  } else if (doorsOpen.length) {
+    tone = 'warn';
+    title = doorsOpen.length === 1 ? doorsOpen[0] + ' door is open' : doorsOpen.length + ' doors are open';
+  } else if (!devices.length) {
+    title = 'Waiting for the first reading';
   }
+  const newest = events.length ? new Date(events[0].time) : null;
+  const sub = newest ? 'Last activity ' + timeAgo(newest) : 'Nothing has reported yet';
+
+  const main = el('div', 'status-main');
+  const ic = el('span', 'status-icon');
+  ic.innerHTML = `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${STATUS_ICONS[tone]}</svg>`;
+  const words = el('div');
+  words.append(el('div', 'status-title', title), el('div', 'status-sub', sub));
+  main.append(ic, words);
+
+  const chips = el('div', 'status-chips');
+  if (hasDoors) {
+    chips.append(doorsOpen.length
+      ? el('span', 'status-chip warn', doorsOpen.join(', ') + (doorsOpen.length === 1 ? ' door open' : ' doors open'))
+      : el('span', 'status-chip', 'Doors closed'));
+  }
+  for (const [d, s] of summaries) {
+    if (s[0] === 'Running') chips.append(el('span', 'status-chip info', d.name + ' running'));
+    if (s[0] === 'Paused') chips.append(el('span', 'status-chip warn', d.name + ' paused'));
+  }
+
+  const children = [main];
+  if (chips.childElementCount) children.push(chips);
+  if (activeAlerts.length) {
+    const list = el('ul', 'alert-list');
+    list.append(...activeAlerts.map(a => {
+      const since = new Date(a.time);
+      const item = el('li', 'alert-item');
+      const when = el('span', 'since', 'since ' + sinceText(since));
+      when.title = dayFormat.format(since) + ', ' + clockFormat.format(since);
+      item.append(icon('bell'), el('span', '', keepTogether(convertTemps(a.message || ''))), when);
+      return item;
+    }));
+    children.push(list);
+  }
+  box.className = 'status-card ' + tone;
+  box.replaceChildren(...children);
+  $('homeBadge').hidden = activeAlerts.length === 0;
+}
+
+// ---------------------------------------------------------------- home: today
+
+/** An event in plain words, with the tone of its dot: ["Fridge door opened", "warn"]. */
+function describe(e) {
+  const { main, part } = splitDevice(e.device || '');
+  const name = part ? prettyType(part) : main;
+  const v = lower(e.value);
+  if (e.type === 'alert') return [convertTemps(e.value || 'Alert'), 'bad'];
+  if (e.type === 'alertCleared') return [convertTemps(e.value || 'All clear'), 'ok'];
+  if (e.type === 'notice') return [convertTemps(e.value || 'Notice'), 'info'];
+  if (e.type === 'command') return [main + ': ' + convertTemps(e.value || 'changed'), 'idle'];
+  if (e.type === 'contact') {
+    if (v === 'open') return [name + ' door opened', 'warn'];
+    if (v === 'closed') return [name + ' door closed', 'ok'];
+  }
+  if (/machinestate$/i.test(e.type)) {
+    if (v === 'run' || v === 'running') return [main + ' started', 'info'];
+    if (v === 'pause' || v === 'paused') return [main + ' paused', 'warn'];
+    if (IDLE_STATES.includes(v)) return [main + ' stopped', 'idle'];
+  }
+  if (e.type === 'temperature') return [name + ' ' + formatValue(e.type, e.value ?? ''), 'info'];
+  return [name + ' ' + prettyType(e.type).toLowerCase() + ': ' + formatValue(e.type, (e.value ?? '').toString()), 'idle'];
+}
+
+const TODAY_MAX = 6;
+
+function renderToday() {
+  const today = new Date().toDateString();
+  const shown = events.filter(e => new Date(e.time).toDateString() === today).slice(0, TODAY_MAX);
+  const list = $('today');
+  if (!shown.length) {
+    list.replaceChildren(el('li', 'empty-line', 'Nothing has happened yet today.'));
+    return;
+  }
+  list.replaceChildren(...shown.map(e => {
+    const [text, tone] = describe(e);
+    const time = new Date(e.time);
+    const li = el('li');
+    const words = el('div', 'tl-text');
+    const { main, part } = splitDevice(e.device || '');
+    words.append(el('span', 'tl-title', keepTogether(text)), el('span', 'tl-sub', part ? main + ' · ' + prettyType(e.type) : prettyType(e.type)));
+    const when = el('span', 'tl-time', shortClock.format(time));
+    when.title = dayFormat.format(time) + ', ' + clockFormat.format(time);
+    li.append(el('span', 'tl-dot ' + tone), words, when);
+    return li;
+  }));
 }
 
 function renderChips() {
@@ -886,6 +1146,7 @@ function setStatus(text, state, clock) {
 
 function renderAll(newIds) {
   renderCards();
+  renderToday();
   renderChips();
   renderTable(newIds);
   renderUnitSwitch();
@@ -1032,21 +1293,10 @@ async function loadAlerts() {
   } catch (err) { /* offline: keep what is shown */ }
 }
 
+/** Problems going on now are shown in the status card on Home (and a red dot on the Home tab on phones). */
 function renderAlerts(list) {
-  const offlineChanged = JSON.stringify(list.filter(a => a.key.startsWith('offline:')))
-                      !== JSON.stringify(activeAlerts.filter(a => a.key.startsWith('offline:')));
   activeAlerts = list;
-  if (offlineChanged) renderCards();
-  const box = $('alerts');
-  box.hidden = list.length === 0;
-  box.replaceChildren(...list.map(a => {
-    const since = new Date(a.time);
-    const item = el('div', 'alert-item');
-    const when = el('span', 'since', 'since ' + sinceText(since));
-    when.title = dayFormat.format(since) + ', ' + clockFormat.format(since);
-    item.append(icon('bell'), el('span', '', keepTogether(convertTemps(a.message || ''))), when);
-    return item;
-  }));
+  renderCards();   // also redraws the status card: an offline appliance shows as "Offline"
 }
 
 // ---------------------------------------------------------------- device controls
@@ -1109,8 +1359,74 @@ function renderControls() {
     head.append(ic, titles);
     card.append(head);
     for (const c of controls) card.append(controlRow(c));
+    card.id = controlCardId(device);
     box.append(card);
   }
+  renderQuick();
+}
+
+const controlCardId = device => 'control-' + device.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+
+/** Shows a device's full controls: the Controls tab on phones, scrolled into view on wider screens. */
+function openControls(device) {
+  showTab('controls');
+  const card = document.getElementById(controlCardId(device));
+  if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ---------------------------------------------------------------- home: quick controls
+
+const QUICK_MAX = 4;
+const CYCLE_STATES = { run: ['Running', 'info'], pause: ['Paused', 'warn'], stop: ['Stopped', 'idle'] };
+
+/**
+ * Tiles on Home for what is changed most: a washer's or dryer's cycle (one button: Start or Pause) and temperature
+ * settings (tap for the full controls). Every change still asks for the PIN and a confirmation, like on Controls.
+ */
+function renderQuick() {
+  const controls = controlsView.controls || [];
+  const picked = [...controls.filter(c => c.kind === 'cycle'), ...controls.filter(c => c.kind === 'number')].slice(0, QUICK_MAX);
+  $('quickSection').hidden = picked.length === 0;
+  $('quick').replaceChildren(...picked.map(c => c.kind === 'cycle' ? cycleTile(c) : numberTile(c)));
+}
+
+function tileTop(iconName, state, tone) {
+  const top = el('span', 'quick-top');   // spans: a tile can be a button, which may only hold inline elements
+  const ic = icon(iconName);
+  ic.classList.add('tone-' + tone);
+  top.append(ic, el('span', 'quick-state tone-' + tone, state));
+  return top;
+}
+
+function cycleTile(c) {
+  const [state, tone] = CYCLE_STATES[c.value] || [optionLabel(c.value || 'unknown'), 'idle'];
+  const running = c.value === 'run';
+  const next = running ? 'pause' : 'run';
+  const tile = el('div', 'quick-tile');
+  const names = el('div');
+  names.append(el('span', 'quick-name', c.device), el('span', 'quick-sub', running ? 'Cycle running' : 'Cycle'));
+  const action = el('button', 'btn', running ? 'Pause' : 'Start');
+  action.type = 'button';
+  action.disabled = !controlsView.enabled || !c.options.includes(next);
+  action.onclick = () => {
+    if (confirm(CYCLE_VERBS[next] + ' the ' + c.device.toLowerCase() + '?')) sendCommand(c, next);
+  };
+  tile.append(tileTop(iconFor(c.device), state, tone), names, action);
+  return tile;
+}
+
+function numberTile(c) {
+  const tempUnit = /^°?\s*([FC])$/i.exec(c.unit || '');
+  const t = tempUnit ? toChosenUnit(Number(c.value), tempUnit[1]) : null;
+  const value = t ? (t.converted ? oneDecimal(t.n) : c.value) + '°' + t.unit : c.value + (c.unit ? ' ' + c.unit : '');
+  const tile = el('button', 'quick-tile');
+  tile.type = 'button';
+  tile.setAttribute('aria-label', c.label + ' ' + value + ', change in Controls');
+  const names = el('span');
+  names.append(el('span', 'quick-name', c.label), el('span', 'quick-sub', c.device + ' · set to'));
+  tile.append(tileTop(tempUnit ? 'thermo' : iconFor(c.device), 'Set', 'info'), names, el('span', 'quick-value', value));
+  tile.onclick = () => openControls(c.device);
+  return tile;
 }
 
 function controlRow(c) {
@@ -1299,6 +1615,10 @@ function showTab(name) {
   try { localStorage.setItem(TAB_KEY, name); } catch (err) { /* private mode: just don't remember */ }
 }
 document.querySelectorAll('#tabs button').forEach(b => b.addEventListener('click', () => { showTab(b.dataset.tab); window.scrollTo(0, 0); }));
+$('seeAll').addEventListener('click', () => {   // the full activity list: its tab on phones, further down on wider screens
+  showTab('activity');
+  document.querySelector('.tab-panel[data-tab="activity"]').scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
 let savedTab = null;
 try { savedTab = localStorage.getItem(TAB_KEY); } catch (err) { /* ignore */ }
 showTab(['status', 'controls', 'activity'].includes(savedTab) ? savedTab : 'status');
@@ -1417,7 +1737,7 @@ setTimeout(() => { if (!everLoaded) load(); }, 3000);
 const watched = () => !paused && !document.hidden;
 setInterval(() => { if (watched()) { checkVersion(); load(); } }, SAFETY_RELOAD_MS);
 // Keep "x seconds ago" and "Updated ..." current between events.
-setInterval(() => { if (watched() && events.length) { renderCards(); renderTable(); } }, 10000);
+setInterval(() => { if (watched() && events.length) { renderCards(); renderToday(); renderTable(); } }, 10000);
 document.addEventListener('visibilitychange', () => { if (watched()) { checkVersion(); load(); } });
 </script>
 </body>

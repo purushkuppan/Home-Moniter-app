@@ -79,6 +79,25 @@ class EventControllerTests {
     }
 
     @Test
+    void homeShowsStatusQuickControlsAppliancesAndToday() throws Exception {
+        String page = get("/");
+        String home = page.substring(page.indexOf("<div class=\"tab-panel\" data-tab=\"status\">"),
+                page.indexOf("<div class=\"tab-panel\" data-tab=\"controls\">"));
+        // In this order: is the house OK, then what is changed most, then each appliance, then today.
+        assertThat(home).containsSubsequence("id=\"statusCard\"", "id=\"weather\"", "id=\"quick\"", "id=\"cards\"",
+                "id=\"today\"");
+        assertThat(home).contains(">Quick controls<", ">Appliances<", ">Today<", "id=\"seeAll\"");
+        assertThat(page).contains("title = 'All good'", "'Needs attention'", "' door is open'",
+                "'Nothing has happened yet today.'");
+        // Phones switch sections from a bottom bar; a red dot on Home while something needs attention.
+        String nav = page.substring(page.indexOf("<nav class=\"tabs\" id=\"tabs\""));
+        assertThat(nav).containsSubsequence("data-tab=\"status\"", ">Home<", "id=\"homeBadge\"",
+                "data-tab=\"controls\"", ">Controls<", "data-tab=\"activity\"", ">Activity<");
+        // Quick controls change devices only through the PIN and a confirmation, like the Controls section.
+        assertThat(page).contains("if (confirm(CYCLE_VERBS[next] + ' the ' + c.device.toLowerCase() + '?')) sendCommand(c, next);");
+    }
+
+    @Test
     void settingsOfferLightDarkOrAutoSavedOnThisDevice() throws Exception {
         String page = get("/");
         assertThat(page).contains("id=\"settingsBtn\"", "aria-label=\"Settings\"", "<dialog id=\"settings\"",
