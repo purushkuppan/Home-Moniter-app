@@ -79,6 +79,22 @@ class EventControllerTests {
     }
 
     @Test
+    void settingsOfferLightDarkOrAutoSavedOnThisDevice() throws Exception {
+        String page = get("/");
+        assertThat(page).contains("id=\"settingsBtn\"", "aria-label=\"Settings\"", "<dialog id=\"settings\"",
+                "name=\"theme\" value=\"light\"", "name=\"theme\" value=\"dark\"", "name=\"theme\" value=\"auto\"",
+                "name=\"themeAuto\" value=\"system\"", "name=\"themeAuto\" value=\"sun\"",
+                ">Match my phone<", ">Sunset to sunrise<");
+        // "Night" is the security mode (#20); the theme only ever says Light and Dark.
+        String settings = page.substring(page.indexOf("<dialog id=\"settings\""), page.indexOf("</dialog>", page.indexOf("<dialog id=\"settings\"")));
+        assertThat(settings).doesNotContain("Night").contains("id=\"unitSwitch\"", "id=\"aboutVersion\"");
+        // Applied before the first paint from what this browser saved, and kept up to date at sunrise and sunset.
+        String head = page.substring(0, page.indexOf("</head>"));
+        assertThat(head).contains("localStorage.getItem(key)", "read('homehub.theme')", "read('homehub.themeAuto') === 'sun'",
+                "phoneDark.addEventListener('change', kudilTheme)", "setInterval(kudilTheme, 60000)");
+    }
+
+    @Test
     void fontsAreServedByKudilAndKeptByBrowsersForAYear() throws Exception {
         for (String font : new String[] {"inter-latin-wght-normal.woff2", "space-grotesk-latin-wght-normal.woff2"}) {
             HttpResponse<byte[]> response = http.send(

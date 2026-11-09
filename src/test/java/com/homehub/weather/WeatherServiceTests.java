@@ -181,4 +181,57 @@ class WeatherServiceTests {
         var without = MockMvcBuilders.standaloneSetup(new WeatherController(service(""))).build();
         without.perform(get("/api/weather")).andExpect(status().isNoContent());
     }
+
+    // sun.sun as Home Assistant 2026.11 answers, shortened: evening in Denton, the sun has set.
+    private static final String SUN_URL = URL + "/api/states/sun.sun";
+    private static final String SUN_DOWN = """
+            {"entity_id":"sun.sun","state":"below_horizon","attributes":{
+             "next_dawn":"2026-11-07T12:30:10.211504+00:00","next_rising":"2026-11-07T12:56:41.630198+00:00",
+             "next_setting":"2026-11-07T23:24:02.004377+00:00","elevation":-12.4,"rising":false,
+             "friendly_name":"Sun"}}""";
+
+    @Test
+    void readsSunriseAndSunsetFromHomeAssistantsSunEntity() {
+        server.expect(ExpectedCount.once(), requestTo(SUN_URL))
+                .andExpect(header("Authorization", "Bearer secret"))
+                .andRespond(withSuccess(SUN_DOWN, MediaType.APPLICATION_JSON));
+        WeatherService weather = service("weather.home");
+
+        assertThat(weather.sun()).hasValue(new Sun(false,
+                Instant.parse("2026-11-07T12:56:41.630198Z"), Instant.parse("2026-11-07T23:24:02.004377Z")));
+        clock.now = clock.now.plus(Duration.ofMinutes(9));
+        assertThat(weather.sun()).as("kept for the refresh time").isPresent();
+        server.verify();
+    }
+
+    @Test
+    void noSunWithoutASunEntityAndTheLastTimesAreKeptWhenHomeAssistantIsDown() {
+        server.expect(ExpectedCount.once(), requestTo(SUN_URL)).andRespond(withStatus(HttpStatus.NOT_FOUND));
+        assertThat(service("weather.home").sun()).isEmpty();
+        server.verify();
+
+        server.reset();
+        server.expect(ExpectedCount.once(), requestTo(SUN_URL)).andRespond(withSuccess(SUN_DOWN, MediaType.APPLICATION_JSON));
+        server.expect(ExpectedCount.once(), requestTo(SUN_URL)).andRespond(withStatus(HttpStatus.BAD_GATEWAY));
+        WeatherService weather = service("weather.home");
+        assertThat(weather.sun()).isPresent();
+        clock.now = clock.now.plus(Duration.ofMinutes(10));
+        assertThat(weather.sun()).as("last known times").isPresent();
+        server.verify();
+
+        assertThat(service("").sun()).as("weather switched off").isEmpty();
+    }
+
+    @Test
+    void apiAnswersWithTheSunOrNoContent() throws Exception {
+        server.expect(ExpectedCount.once(), requestTo(SUN_URL)).andRespond(withSuccess(SUN_DOWN, MediaType.APPLICATION_JSON));
+        MockMvcBuilders.standaloneSetup(new WeatherController(service("weather.home"))).build()
+                .perform(get("/api/sun"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.up").value(false))
+                .andExpect(jsonPath("$.nextRising").value("2026-11-07T12:56:41.630198Z"))
+                .andExpect(jsonPath("$.nextSetting").value("2026-11-07T23:24:02.004377Z"));
+        MockMvcBuilders.standaloneSetup(new WeatherController(service(""))).build()
+                .perform(get("/api/sun")).andExpect(status().isNoContent());
+    }
 }

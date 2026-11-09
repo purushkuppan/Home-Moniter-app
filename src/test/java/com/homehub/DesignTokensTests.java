@@ -65,6 +65,7 @@ class DesignTokensTests {
         Map<String, String> darkOnly = tokens(block(style(page()), ":root[data-theme=\"dark\"]"));
         List<String> colors = light().entrySet().stream()
                 .filter(e -> COLOR_LITERAL.matcher(e.getValue()).find())
+                .filter(e -> !e.getKey().startsWith("preview-"))   // Settings previews show each theme as it is
                 .map(Map.Entry::getKey).toList();
         assertThat(darkOnly.keySet()).containsAll(colors);
     }
