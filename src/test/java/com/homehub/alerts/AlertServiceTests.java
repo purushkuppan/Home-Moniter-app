@@ -28,6 +28,7 @@ class AlertServiceTests {
 
     @LocalServerPort int port;
     @Autowired AlertProperties settings;
+    @Autowired BackupProperties backup;
     @Autowired EventRepository repository;
     @Autowired JdbcTemplate jdbc;
 
@@ -50,6 +51,8 @@ class AlertServiceTests {
         assertThat(settings.freezeCheck()).isEqualTo(LocalTime.of(19, 0));
         assertThat(settings.rainFrom()).isEqualTo(0.1);
         assertThat(settings.rainCheck()).isEqualTo(LocalTime.of(7, 0));
+        assertThat(backup.statusFile()).as("backup alerts are for the hub only").isEmpty();
+        assertThat(backup.missingAfter()).isEqualTo(Duration.ofHours(26));
     }
 
     @Test
