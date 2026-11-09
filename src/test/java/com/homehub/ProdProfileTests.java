@@ -46,6 +46,9 @@ class ProdProfileTests {
         assertThat(prod.getProperty("homehub.alerts.link")).isEqualTo("http://192.168.5.251:8080");
         // The hub alerts when its nightly backup (deploy/backup.sh) stops; elsewhere there is no backup to watch.
         assertThat(prod.getProperty("homehub.alerts.backup.status-file")).isEqualTo("/var/lib/homehub-backup/last-success");
+        // The SmartThings watchdog runs on the hub only, watching the fridge's power reports.
+        assertThat(prod.getProperty("homehub.watchdog.entity")).isEqualTo("sensor.kitchen_refrigerator_power");
+        assertThat(prod.getProperty("homehub.watchdog.stale-after")).isEqualTo("45m");
 
         // Same entity list as the default configuration.
         StandardEnvironment dev = load(home, creds);
@@ -56,6 +59,7 @@ class ProdProfileTests {
         assertThat(dev.getProperty("spring.datasource.url")).isEqualTo("jdbc:sqlite:data/homehub.db");
         assertThat(dev.getProperty("homehub.connectors.fake.enabled")).isEqualTo("true");
         assertThat(dev.getProperty("homehub.alerts.backup.status-file")).isEmpty();
+        assertThat(dev.getProperty("homehub.watchdog.entity")).isEmpty();
     }
 
     @Test
