@@ -10,6 +10,8 @@ import java.net.http.HttpClient;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -39,6 +41,7 @@ public class WeatherService {
     private static final ParameterizedTypeReference<Map<String, Object>> JSON = new ParameterizedTypeReference<>() {};
     private static final Duration RETRY_AFTER_FAILURE = Duration.ofMinutes(1);
     private static final int FORECAST_DAYS = 3;
+    private static final String SUN_ENTITY = "sun.sun";
 
     private final RestClient client;
     private final boolean enabled;
@@ -47,6 +50,8 @@ public class WeatherService {
     private final Clock clock;
     private Weather cached;
     private Instant nextFetch = Instant.MIN;
+    private Sun cachedSun;
+    private Instant nextSunFetch = Instant.MIN;
 
     @Autowired
     public WeatherService(HomeAssistantProperties homeAssistant,
@@ -88,6 +93,40 @@ public class WeatherService {
             nextFetch = now.plus(RETRY_AFTER_FAILURE);
         }
         return Optional.ofNullable(cached);
+    }
+
+    /**
+     * Sunrise and sunset at home, from Home Assistant's {@code sun.sun} entity; kept for the refresh time like the
+     * weather. Empty when weather is switched off or Home Assistant has no sun entity. If Home Assistant can't be
+     * reached, the last times are kept: the dashboard switches at them by itself.
+     */
+    public synchronized Optional<Sun> sun() {
+        if (!enabled) return Optional.empty();
+        Instant now = clock.instant();
+        if (now.isBefore(nextSunFetch)) return Optional.ofNullable(cachedSun);
+        try {
+            Map<String, Object> state = client.get().uri("/states/{id}", SUN_ENTITY).retrieve().body(JSON);
+            Map<String, Object> attrs = asMap(state == null ? null : state.get("attributes"));
+            String position = text(state == null ? null : state.get("state"));
+            Instant rising = instant(attrs.get("next_rising"));
+            Instant setting = instant(attrs.get("next_setting"));
+            boolean known = ("above_horizon".equals(position) || "below_horizon".equals(position))
+                    && rising != null && setting != null;
+            cachedSun = known ? new Sun("above_horizon".equals(position), rising, setting) : null;
+            nextSunFetch = now.plus(refresh);
+        } catch (RestClientException ex) {
+            log.debug("Sun: not available ({})", ex.getClass().getSimpleName());
+            nextSunFetch = now.plus(RETRY_AFTER_FAILURE);
+        }
+        return Optional.ofNullable(cachedSun);
+    }
+
+    private static Instant instant(Object value) {
+        try {
+            return value == null ? null : OffsetDateTime.parse(value.toString()).toInstant();
+        } catch (DateTimeParseException ex) {
+            return null;
+        }
     }
 
     private Weather fetch(Instant now) {

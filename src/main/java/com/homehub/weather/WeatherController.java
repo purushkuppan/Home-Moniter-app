@@ -18,4 +18,10 @@ public class WeatherController {
     public ResponseEntity<Weather> weather() {
         return weather.current().map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.noContent().build());
     }
+
+    /** {@code GET /api/sun}: whether the sun is up at home, for the "Sunset to sunrise" appearance; 204 when unknown. */
+    @GetMapping("/api/sun")
+    public ResponseEntity<Sun> sun() {
+        return weather.sun().map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.noContent().build());
+    }
 }

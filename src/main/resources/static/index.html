@@ -7,13 +7,40 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%231F6E53' d='M12 3 2 11h3v9h5v-6h4v6h5v-9h3z'/%3E%3C/svg%3E">
 <link rel="preload" href="fonts/inter-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
 <script>
-  // Theme before the first paint, so the page never flashes the wrong colors: Dark when the phone or computer is
-  // set to dark mode, otherwise Light, and it follows a change of that setting while the page is open.
+  // Theme before the first paint, so the page never flashes the wrong colors. Settings › Appearance, saved in this
+  // browser: Light, Dark, or Auto (the default). Auto either matches the phone's dark mode or goes dark from sunset to
+  // sunrise at home, using the sun times Kudil last sent (/api/sun).
   (function () {
-    const dark = window.matchMedia('(prefers-color-scheme: dark)');
-    const apply = () => { document.documentElement.dataset.theme = dark.matches ? 'dark' : 'light'; };
-    apply();
-    dark.addEventListener('change', apply);
+    const phoneDark = window.matchMedia('(prefers-color-scheme: dark)');
+    const read = key => { try { return localStorage.getItem(key); } catch (err) { return null; } };
+    const DAY = 86400000;
+
+    /** True when the sun is down now, false when it's up, null when no sun times are known. */
+    function sunDown(now) {
+      let sun = null;
+      try { sun = JSON.parse(read('homehub.sun')); } catch (err) { /* ignore */ }
+      let rise = sun && Date.parse(sun.nextRising), set = sun && Date.parse(sun.nextSetting);
+      if (!rise || !set) return null;
+      // Times that have passed move on a day at a time (sunrise shifts only minutes a day), so this stays right
+      // between updates and even after days away.
+      while (rise <= now) rise += DAY;
+      while (set <= now) set += DAY;
+      return rise < set;   // sunrise comes first: it's night
+    }
+
+    window.kudilTheme = function () {
+      const choice = read('homehub.theme');
+      let dark;
+      if (choice === 'light' || choice === 'dark') dark = choice === 'dark';
+      else {
+        const down = read('homehub.themeAuto') === 'sun' ? sunDown(Date.now()) : null;
+        dark = down !== null ? down : phoneDark.matches;
+      }
+      document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+    };
+    kudilTheme();
+    phoneDark.addEventListener('change', kudilTheme);
+    setInterval(kudilTheme, 60000);   // sunrise and sunset happen while the page is open
   })();
 </script>
 <style>
@@ -51,6 +78,9 @@
     --idle: #5B6661;    --idle-soft: #EEF0EC;
     --bad: #B42318;     --bad-soft: #FDE9E7;    --on-bad: #FFFFFF;
     --new: #FFF6D6;
+    /* The theme previews in Settings show each theme as it is, so these stay the same in both themes. */
+    --preview-light-bg: #F5F6F3;  --preview-light-card: #FFFFFF;  --preview-light-accent: #1F6E53;
+    --preview-dark-bg: #0F1412;   --preview-dark-card: #18201C;   --preview-dark-accent: #4FBF94;
     --scrim: rgba(15, 20, 18, .45);
     --shadow: 0 1px 2px rgba(22, 32, 28, .04), 0 4px 16px rgba(22, 32, 28, .06);
     --radius: 14px;
@@ -138,6 +168,56 @@
   }
   .unit-switch button:hover { color: var(--accent); }
   .unit-switch button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
+
+  .icon-btn {
+    display: grid; place-items: center; flex: none; width: 38px; height: 38px; padding: 0; border-radius: 50%;
+    border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer;
+  }
+  .icon-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* Settings */
+  dialog.sheet { width: min(440px, calc(100% - 24px)); max-height: calc(100% - 24px); padding: 8px 20px 20px; overflow: auto; }
+  .sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 -8px 4px 0; }
+  .sheet-head h3 { margin: 0; font-size: 22px; }
+  .group-title {
+    margin: 18px 0 10px; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--muted);
+  }
+  .theme-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 0; padding: 0; border: 0; }
+  .theme-option { position: relative; cursor: pointer; }
+  .theme-option input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+  .theme-card {
+    display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 9px 8px 11px;
+    border-radius: 16px; background: var(--surface); border: 1px solid var(--border);
+  }
+  .theme-option input:checked + .theme-card { border: 2px solid var(--accent); padding: 8px 7px 10px; }
+  .theme-option input:focus-visible + .theme-card { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .preview {
+    display: flex; flex-direction: column; gap: 6px; width: 100%; height: 84px; padding: 8px; border-radius: 10px;
+    border: 1px solid var(--border); background: var(--preview-light-bg);
+  }
+  .preview .bar { width: 50%; height: 8px; border-radius: 4px; background: var(--preview-light-accent); }
+  .preview .tile { flex: 1; border-radius: 6px; background: var(--preview-light-card); }
+  .preview.dark { background: var(--preview-dark-bg); }
+  .preview.dark .bar { background: var(--preview-dark-accent); }
+  .preview.dark .tile { background: var(--preview-dark-card); }
+  .preview.auto { background: linear-gradient(90deg, var(--preview-light-bg) 50%, var(--preview-dark-bg) 50%); }
+  .preview.auto .bar { background: var(--accent); }
+  .preview.auto .tile { background: linear-gradient(90deg, var(--preview-light-card) 50%, var(--preview-dark-card) 50%); }
+  .option-label { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 14px; }
+  .option-label svg.icon { width: 16px; height: 16px; }
+  .setting-hint { margin: 10px 2px 0; color: var(--muted); font-size: 13px; }
+  .auto-options { margin: 12px 0 0; padding: 2px 14px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); }
+  .auto-options[hidden] { display: none; }
+  .auto-options label { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 6px 0; cursor: pointer; }
+  .auto-options label + label { border-top: 1px solid var(--border); }
+  .auto-options input { width: 20px; height: 20px; margin: 0; flex: none; accent-color: var(--accent); }
+  .auto-options small { display: block; color: var(--muted); font-size: 12px; }
+  .settings-list { list-style: none; margin: 0; padding: 0 14px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); }
+  .settings-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 56px; }
+  .settings-list li + li { border-top: 1px solid var(--border); }
+  .settings-list .value { color: var(--muted); font-size: 14px; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
   /* Alerts banner: problems going on right now */
   .alerts { display: grid; gap: 8px; margin: 0 0 20px; }
@@ -228,6 +308,7 @@
     border-radius: var(--radius); background: var(--surface); color: var(--text); box-shadow: var(--shadow);
   }
   dialog::backdrop { background: var(--scrim); }
+  dialog:focus-visible { outline: none; }   /* the dialog box itself; its buttons still show focus */
   dialog h3 { margin: 0 0 4px; font-family: var(--font-heading); font-size: 18px; font-weight: 600; }
   .dialog-sub { margin: 0 0 14px; color: var(--muted); font-size: 13px; }
   dialog input {
@@ -299,6 +380,7 @@
   /* Touch screens of any size (tablets too): every control at least --tap high. */
   @media (pointer: coarse) {
     .btn, .chip, .control select { min-height: var(--tap); }
+    .icon-btn { width: var(--tap); height: var(--tap); }
     .unit-switch button { min-height: calc(var(--tap) - 6px); }
   }
 
@@ -361,11 +443,10 @@
       <p>Home appliance monitor<span id="appVersion"></span></p>
     </div>
     <div class="live" id="live"><span class="dot"></span><span id="status">Connecting…</span></div>
-    <div class="unit-switch" id="unitSwitch" role="group" aria-label="Temperature unit" title="Show temperatures in °F or °C">
-      <button type="button" data-unit="F" aria-pressed="false">°F</button>
-      <button type="button" data-unit="C" aria-pressed="false">°C</button>
-    </div>
     <button class="btn" id="pause" type="button">Pause</button>
+    <button class="icon-btn" id="settingsBtn" type="button" aria-label="Settings" title="Settings" aria-haspopup="dialog">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
   </div>
   <!-- Phones only: one section at a time instead of one very long page -->
   <nav class="tabs wrap" id="tabs" aria-label="Sections">
@@ -436,6 +517,60 @@
       <button class="btn primary" type="submit">Unlock</button>
     </menu>
   </form>
+</dialog>
+<dialog id="settings" class="sheet" aria-labelledby="settingsTitle">
+  <div class="sheet-head">
+    <h3 id="settingsTitle">Settings</h3>
+    <button class="icon-btn" type="button" id="settingsClose" aria-label="Close settings">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+    </button>
+  </div>
+
+  <h4 class="group-title" id="appearanceTitle">Appearance</h4>
+  <fieldset class="theme-options" aria-labelledby="appearanceTitle">
+    <label class="theme-option">
+      <input type="radio" name="theme" value="light">
+      <span class="theme-card">
+        <span class="preview" aria-hidden="true"><span class="bar"></span><span class="tile"></span><span class="tile"></span></span>
+        <span class="option-label"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>Light</span>
+      </span>
+    </label>
+    <label class="theme-option">
+      <input type="radio" name="theme" value="dark">
+      <span class="theme-card">
+        <span class="preview dark" aria-hidden="true"><span class="bar"></span><span class="tile"></span><span class="tile"></span></span>
+        <span class="option-label"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>Dark</span>
+      </span>
+    </label>
+    <label class="theme-option">
+      <input type="radio" name="theme" value="auto">
+      <span class="theme-card">
+        <span class="preview auto" aria-hidden="true"><span class="bar"></span><span class="tile"></span><span class="tile"></span></span>
+        <span class="option-label"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3v18"/></svg>Auto</span>
+      </span>
+    </label>
+  </fieldset>
+  <p class="setting-hint" id="themeHint"></p>
+  <fieldset class="auto-options" id="autoOptions" hidden>
+    <legend class="sr-only">How Auto switches</legend>
+    <label><input type="radio" name="themeAuto" value="system">
+      <span>Match my phone<small>Follows this device's dark mode setting</small></span></label>
+    <label><input type="radio" name="themeAuto" value="sun">
+      <span>Sunset to sunrise<small id="sunNote">Dark while the sun is down at home</small></span></label>
+  </fieldset>
+
+  <h4 class="group-title">General</h4>
+  <ul class="settings-list">
+    <li>
+      <span>Temperature unit</span>
+      <div class="unit-switch" id="unitSwitch" role="group" aria-label="Temperature unit" title="Show temperatures in °F or °C">
+        <button type="button" data-unit="F" aria-pressed="false">°F</button>
+        <button type="button" data-unit="C" aria-pressed="false">°C</button>
+      </div>
+    </li>
+    <li><span>About Kudil</span><span class="value" id="aboutVersion">–</span></li>
+  </ul>
+  <p class="setting-hint">Settings are saved on this device.</p>
 </dialog>
 <div class="toast" id="toast" role="status" hidden></div>
 
@@ -827,6 +962,7 @@ async function load() {
   everLoaded = true;
   loadAlerts();   // in parallel: the banner shouldn't wait for the activity list
   loadWeather();  // the server keeps it for 10 minutes, so asking often is cheap
+  if (followsSun()) loadSun();   // at most every 10 minutes
   try {
     const [res, latestRes] = await Promise.all([
       fetch('/api/events', { cache: 'no-store' }),
@@ -859,7 +995,7 @@ async function checkVersion() {
     if (!res.ok) return;
     const { started, version } = await res.json();
     if (serverStarted && started !== serverStarted) {
-      if (!$('pinDialog').open) location.reload();   // otherwise: reload on the next check
+      if (!$('pinDialog').open && !$('settings').open) location.reload();   // otherwise: reload on the next check
       return;
     }
     serverStarted = started;
@@ -872,6 +1008,7 @@ function showVersion(version) {
   const label = /^\d+\.\d+\.\d+$/.test(version || '') ? 'v' + version : 'dev';
   $('appVersion').textContent = ' · ' + label;
   $('footerVersion').textContent = label;
+  $('aboutVersion').textContent = label;
 }
 
 /** One event pushed by the server the moment it was saved. */
@@ -1184,6 +1321,80 @@ document.querySelectorAll('#unitSwitch button').forEach(b => b.addEventListener(
   }
   renderUnitSwitch();   // nothing else is shown yet: load() below draws everything in this unit
 }
+
+// ---------------------------------------------------------------- settings: appearance
+// Saved in this browser; the script in <head> (kudilTheme) applies it before the first paint and keeps it up to date.
+
+const THEME_KEY = 'homehub.theme';
+const THEME_AUTO_KEY = 'homehub.themeAuto';
+const SUN_KEY = 'homehub.sun';
+const SUN_REFRESH_MS = 10 * 60 * 1000;
+const THEME_HINTS = {
+  light: 'Light background. Best in bright rooms and daytime.',
+  dark: 'Dark background, softer on the eyes at night.',
+  auto: 'Switches between Light and Dark for you.'
+};
+let sunAvailable = null;   // null: not asked yet
+let sunLoadedAt = 0;
+
+function saved(key) {
+  try { return localStorage.getItem(key); } catch (err) { return null; }
+}
+function save(key, value) {
+  try { localStorage.setItem(key, value); } catch (err) { /* private mode: applies until the page is closed */ }
+}
+const themeChoice = () => ['light', 'dark'].includes(saved(THEME_KEY)) ? saved(THEME_KEY) : 'auto';
+const autoChoice = () => saved(THEME_AUTO_KEY) === 'sun' ? 'sun' : 'system';
+const followsSun = () => themeChoice() === 'auto' && autoChoice() === 'sun';
+
+function renderAppearance() {
+  const theme = themeChoice(), auto = autoChoice();
+  document.querySelectorAll('input[name="theme"]').forEach(i => { i.checked = i.value === theme; });
+  document.querySelectorAll('input[name="themeAuto"]').forEach(i => { i.checked = i.value === auto; });
+  $('themeHint').textContent = THEME_HINTS[theme];
+  $('autoOptions').hidden = theme !== 'auto';
+  $('sunNote').textContent = sunAvailable === false
+    ? 'Sun times aren\'t available from Home Assistant, so this matches the phone for now'
+    : 'Dark while the sun is down at home';
+}
+
+/** Sunrise and sunset at home (from Home Assistant), kept in the browser so the theme is right before first paint. */
+async function loadSun(force) {
+  if (!force && Date.now() - sunLoadedAt < SUN_REFRESH_MS) return;
+  sunLoadedAt = Date.now();
+  try {
+    const res = await fetch('/api/sun', { cache: 'no-store' });
+    if (res.status === 204) sunAvailable = false;
+    else if (res.ok) {
+      save(SUN_KEY, JSON.stringify(await res.json()));
+      sunAvailable = true;
+      kudilTheme();
+    }
+  } catch (err) { /* offline: the last sun times still work */ }
+  if ($('settings').open) renderAppearance();
+}
+
+function chooseTheme(key, value) {
+  save(key, value);
+  kudilTheme();
+  renderAppearance();
+  if (followsSun()) loadSun(true);
+}
+document.querySelectorAll('input[name="theme"]').forEach(i => i.addEventListener('change', () => chooseTheme(THEME_KEY, i.value)));
+document.querySelectorAll('input[name="themeAuto"]').forEach(i => i.addEventListener('change', () => chooseTheme(THEME_AUTO_KEY, i.value)));
+
+$('settingsBtn').addEventListener('click', () => {
+  renderAppearance();
+  renderUnitSwitch();
+  $('settings').showModal();
+  if (followsSun()) loadSun();
+});
+$('settingsClose').addEventListener('click', () => $('settings').close());
+if (location.hash === '#settings') $('settingsBtn').click();   // a bookmark straight to Settings
+$('settings').addEventListener('click', e => {   // a tap outside the sheet closes it
+  const r = $('settings').getBoundingClientRect();
+  if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) $('settings').close();
+});
 
 $('pause').addEventListener('click', () => {
   paused = !paused;
