@@ -27,6 +27,9 @@ jobs:
         run: |
           command -v sqlite3 >/dev/null || { sudo apt-get update -q && sudo apt-get install -y -q sqlite3; }
           bash deploy/test/backup-test.sh
+      - name: Test the firewall script
+        # With a stand-in ufw that only records the rules it is asked to add or remove.
+        run: bash deploy/test/firewall-test.sh
       - name: Build and test
         run: bash ./mvnw -B -ntp verify
       - name: List dependency licenses
