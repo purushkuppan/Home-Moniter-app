@@ -186,6 +186,24 @@ class EventControllerTests {
     }
 
     @Test
+    void idleWasherShowsWhenItLastFinishedNotWhenItsStateWasLastReported() throws Exception {
+        // A cycle ends (the "finished" notice), then a restart or a SmartThings reconnect re-reports the machine state.
+        repository.save(new Event(null, "Washer", "notice", "Washer finished", java.time.Instant.parse("2026-11-09T01:42:00Z")));
+        repository.add("Washer", "machineState", "unavailable");
+        repository.add("Washer", "machineState", "stop");
+
+        // The dashboard reads both from /api/events/latest: the newest notice survives the later state changes.
+        String latest = get("/api/events/latest");
+        assertThat(latest).contains("\"type\":\"notice\",\"value\":\"Washer finished\",\"time\":\"2026-11-09T01:42:00Z\"")
+                .contains("\"type\":\"machineState\",\"value\":\"stop\"");
+
+        // An idle machine shows its last finished run, not the time its state was last re-reported.
+        String page = get("/");
+        assertThat(page).contains("function lastFinishedRuns()", "'Last run finished ' + sinceText(d.lastRun)",
+                "'No finished run yet'").doesNotContain("return ['Idle', 'idle', 'Since ' + sinceText(machine.time)];");
+    }
+
+    @Test
     void versionIdentifiesTheRunningServer() throws Exception {
         String version = get("/api/version");
         assertThat(version).contains("\"started\":\"").contains("\"version\":\"");
