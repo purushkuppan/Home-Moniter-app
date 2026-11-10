@@ -37,6 +37,7 @@ Then on the hub:
 cd ~/homehub-deploy
 sudo bash setup-hub.sh      # service, folders, credentials, sudo rule, firewall, nightly backup
 sudo bash setup-runner.sh   # GitHub runner for automatic deploys
+sudo bash setup-tailscale.sh   # optional: open Kudil away from home (see Remote access)
 ```
 Re-run `setup-hub.sh` after any change to `install-release.sh`, `backup.sh` or the systemd units in git. The hub uses its
 own copy in `/opt/homehub/bin`, which the runner can't modify.
@@ -119,6 +120,26 @@ sudo cp -a /root/restore/homeassistant/. /opt/homeassistant/
 sudo docker start homeassistant
 ```
 Then `sudo rm -rf /root/restore`.
+
+## Remote access (Tailscale)
+Kudil has no login yet, so it is never opened to the internet. Away from home it is reached through a private
+Tailscale network ([ADR 10](../docs/adr/0010-remote-access-through-tailscale.md)): only your own signed-in devices can
+reach it, and nothing changes on the router.
+
+One-time setup on the hub (prints a sign-in link the first time):
+```bash
+cd ~/homehub-deploy && sudo bash setup-tailscale.sh
+```
+Then:
+1. In the Tailscale admin console (**Machines**), open `home-hub`'s **⋯** menu → **Disable key expiry**.
+2. Install the **Tailscale** app on each phone or laptop and sign in with the same account.
+3. Open **http://home-hub:8080** (or `http://<the hub's 100.x.y.z address>:8080`) from anywhere.
+
+Only port 8080 is open to Tailscale devices (`ufw allow in on tailscale0 to any port 8080`); Home Assistant, Cockpit
+and SSH stay home-network only. Protect the Tailscale account with two-factor authentication: whoever can add a device
+to it can open Kudil.
+
+Useful commands: `tailscale status` (devices and addresses), `tailscale ip -4`, `sudo tailscale down` / `up`.
 
 ## Secrets
 Never in git, issues, pull requests or chat.
