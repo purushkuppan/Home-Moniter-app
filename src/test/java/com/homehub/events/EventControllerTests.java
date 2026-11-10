@@ -120,23 +120,34 @@ class EventControllerTests {
     void kudilLogoInTheHeaderTabAndOnThePhoneHomeScreen() throws Exception {
         String page = get("/");
         String head = page.substring(0, page.indexOf("</head>"));
-        assertThat(head).contains("<link rel=\"icon\" href=\"icons/kudil.svg\" type=\"image/svg+xml\">",
+        assertThat(head).contains("<link rel=\"icon\" href=\"brand/kudil-favicon.svg\" type=\"image/svg+xml\">",
                 "<link rel=\"apple-touch-icon\" href=\"icons/apple-touch-icon.png\">",
-                "<link rel=\"manifest\" href=\"manifest.json\">", "<meta name=\"apple-mobile-web-app-title\" content=\"Kudil\">");
-        // The header shows the hut (doorway and lit window), not the old generic house glyph.
-        assertThat(page).contains("<path class=\"door\"", "<rect class=\"lamp\"").doesNotContain("M12 3 2 11h3v9h5v-6h4v6h5v-9h3z");
+                "<link rel=\"manifest\" href=\"manifest.json\">", "<meta name=\"apple-mobile-web-app-title\" content=\"Kudil\">",
+                "<meta name=\"theme-color\" content=\"#0F3D3A\">");
+        // The header shows the brand mark (brand/kudil-mark.svg): the K-house strokes and the light at its heart, in
+        // theme colors so it is teal on light and light on dark.
+        assertThat(page).contains("<path d=\"M26 72 L64 34 L102 72\"/>", "<circle class=\"lamp\" cx=\"64\" cy=\"60\" r=\"5.5\"/>")
+                .doesNotContain("class=\"door\"", "M12 3 2 11h3v9h5v-6h4v6h5v-9h3z");
+
+        // The brand files are served as they were chosen.
+        for (String file : new String[] {"kudil-mark.svg", "kudil-mark-on-dark.svg", "kudil-mark-mono.svg", "kudil-logo.svg",
+                "kudil-logo-on-dark.svg", "kudil-app-icon.svg", "kudil-favicon.svg", "kudil-favicon-16.svg"}) {
+            assertThat(get("/brand/" + file)).as(file).contains("<svg", "aria-label=\"Kudil");
+        }
+        assertThat(get("/brand/kudil-app-icon.svg")).contains("#0F3D3A", "#D9901A");
 
         // "Add to Home screen" gets the name Kudil, the icons, and opens full screen.
         String manifest = get("/manifest.json");
-        assertThat(manifest).contains("\"short_name\": \"Kudil\"", "\"display\": \"standalone\"", "\"purpose\": \"maskable\"");
-        for (String icon : new String[] {"icon-192.png", "icon-512.png", "apple-touch-icon.png", "favicon-32.png"}) {
+        assertThat(manifest).contains("\"short_name\": \"Kudil\"", "\"display\": \"standalone\"", "\"theme_color\": \"#0F3D3A\"",
+                "\"purpose\": \"maskable\"");
+        for (String icon : new String[] {"icon-192.png", "icon-512.png", "icon-maskable-192.png", "icon-maskable-512.png",
+                "apple-touch-icon.png", "favicon-32.png", "favicon-16.png"}) {
             HttpResponse<byte[]> png = http.send(
                     HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/icons/" + icon)).build(),
                     HttpResponse.BodyHandlers.ofByteArray());
             assertThat(png.statusCode()).as(icon).isEqualTo(200);
             assertThat(png.body()).as(icon).startsWith((byte) 0x89, (byte) 'P', (byte) 'N', (byte) 'G');
         }
-        assertThat(get("/icons/kudil.svg")).contains("aria-label=\"Kudil\"", "#1F6E53", "#F2B24C");
     }
 
     @Test

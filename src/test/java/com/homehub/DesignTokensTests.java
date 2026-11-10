@@ -77,6 +77,7 @@ class DesignTokensTests {
                 {"text", "bg"}, {"text", "surface"}, {"text", "surface-2"}, {"text", "new"},
                 {"muted", "bg"}, {"muted", "surface"}, {"muted", "surface-2"},
                 {"accent", "bg"}, {"accent", "surface"}, {"on-accent", "accent"},
+                {"brand-ink", "bg"}, {"brand-ink", "surface"},   // the Kudil mark and name in the header
                 {"ok", "ok-soft"}, {"ok", "surface"}, {"warn", "warn-soft"}, {"warn", "surface"},
                 {"info", "info-soft"}, {"info", "surface"}, {"idle", "idle-soft"},
                 {"bad", "bad-soft"}, {"bad", "surface"}, {"on-bad", "bad"},
