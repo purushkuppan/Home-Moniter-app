@@ -27,7 +27,14 @@ systemctl enable --now tailscaled
 
 # Join the tailnet. The first time, this prints a link: open it on your phone or PC and sign in.
 # --ssh=false: SSH stays as it is (LAN only); Tailscale doesn't take it over.
-tailscale up --hostname="$HOSTNAME_ON_TAILNET" --ssh=false
+# --netfilter-mode=nodivert: by default Tailscale puts its own "accept everything from the tailnet" rule in front of
+#   the firewall, so ufw's rules below would never be reached and SSH, Home Assistant and Cockpit would be open to every
+#   tailnet device. With nodivert, Tailscale traffic goes through ufw like any other.
+tailscale up --hostname="$HOSTNAME_ON_TAILNET" --ssh=false --netfilter-mode=nodivert
+
+# Tailscale's own connection port, so devices at home connect to the hub directly instead of through a relay.
+# (Tailscale opened it itself before nodivert. The router doesn't forward it, so it's reachable from home only.)
+ufw allow 41641/udp comment 'Tailscale direct connections'
 
 # Kudil from your Tailscale devices, and nothing else (Home Assistant, Cockpit, SSH stay home-network only).
 # ufw stops at the first matching rule, and older rules may allow ports such as 22 or 8123 from anywhere, so these two

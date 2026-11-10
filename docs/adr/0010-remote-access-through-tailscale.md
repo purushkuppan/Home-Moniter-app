@@ -21,7 +21,9 @@ Options considered:
   `deploy/setup-tailscale.sh` installs Tailscale from its official apt repository. The household's phones and
   laptops join the same tailnet.
 - The firewall opens **only Kudil (8080)** on the `tailscale0` interface. Both rules (allow 8080, deny the rest) sit at the
-  top of the firewall, because older rules allow some ports (SSH, Home Assistant) from anywhere. Home Assistant, Cockpit and SSH stay
+  top of the firewall, because older rules allow some ports (SSH, Home Assistant) from anywhere. Tailscale runs
+  with `--netfilter-mode=nodivert`: by default it adds its own "accept all from the tailnet" rule in front of the
+  firewall, which would bypass these rules. Home Assistant, Cockpit and SSH stay
   LAN-only. Nothing is opened on the router.
 - Kudil is reached at `http://kudil:8080` from any device on the tailnet. Traffic is end-to-end encrypted
   (WireGuard), so plain HTTP inside the tailnet is acceptable for now.
