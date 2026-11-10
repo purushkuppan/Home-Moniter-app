@@ -31,6 +31,8 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * @param rainFrom    a rain notice when today's forecast has at least this much rain or snow (Home Assistant's unit,
  *                    e.g. 0.1 for inches); empty: no rain notices
  * @param rainCheck   local time of the daily rain check, normally 07:00
+ * @param lowBattery  a low-battery warning when a device's battery is at or below this percentage (any device with a
+ *                    "battery" reading); empty: no battery warnings
  */
 @ConfigurationProperties("homehub.alerts")
 public record AlertProperties(
@@ -45,7 +47,8 @@ public record AlertProperties(
         Double freezeBelow,
         @DefaultValue("19:00") LocalTime freezeCheck,
         Double rainFrom,
-        @DefaultValue("07:00") LocalTime rainCheck) {
+        @DefaultValue("07:00") LocalTime rainCheck,
+        Double lowBattery) {
 
     public AlertProperties {
         offline = offline == null ? Map.of() : Map.copyOf(offline);

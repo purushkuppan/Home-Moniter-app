@@ -23,6 +23,9 @@ import java.util.regex.Pattern;
  *   <li>A door that stays open longer than its limit, and "closed" once it shuts again.</li>
  *   <li>A temperature above its limit for longer than {@code tooWarmFor}, and "back to normal" afterwards.</li>
  *   <li>A washer or dryer whose cycle ends (job state "finish(ed)", or the machine going from run/pause to stop).</li>
+ *   <li>A battery at or below {@code lowBattery} percent (or a battery sensor that says "on" = low), right away, and
+ *       "fine again" once it is a few points above the limit (a new battery), so a reading that wobbles around the
+ *       limit is reported once.</li>
  *   <li>A device whose readings are <em>all</em> "unavailable" for longer than its limit, and "back online" afterwards.
  *       A quiet device is not offline: readings are only stored when they change.</li>
  *   <li>Home Assistant unreachable for longer than {@code connectionLostAfter}, and "back now" afterwards.</li>
@@ -37,6 +40,10 @@ final class AlertRules {
     /** "44 F", "-3.5 C", "38" */
     private static final Pattern READING = Pattern.compile("(-?\\d+(?:\\.\\d+)?)\\s*([A-Za-z]*)");
     private static final String HOME_ASSISTANT = "Home Assistant";
+    /** "15 %", "15%", "15" */
+    private static final Pattern PERCENT = Pattern.compile("(\\d+(?:\\.\\d+)?)\\s*%?");
+    /** A low battery is fine again only this many points above the limit. */
+    static final double BATTERY_CLEAR_MARGIN = 5;
 
     private final Map<String, Duration> doorLimits = new HashMap<>();
     private final Map<String, Double> warmLimits = new HashMap<>();
@@ -44,6 +51,7 @@ final class AlertRules {
     private final Set<String> machines = new HashSet<>();
     private final Map<String, Duration> offlineLimits = new HashMap<>();   // by main device: "refrigerator"
     private final Duration connectionLostAfter;
+    private final Double lowBattery;   // null: no battery warnings
 
     /** A door that is open, or a reading that is too warm: since when, and whether the alert has gone out. */
     private static final class Watch {
@@ -65,6 +73,7 @@ final class AlertRules {
     private final Map<String, Map<String, Boolean>> unavailable = new HashMap<>();
     private final Map<String, Watch> offline = new LinkedHashMap<>();
     private Watch connectionLost;   // null while Home Assistant is reachable
+    private final Map<String, Watch> lowBatteries = new LinkedHashMap<>();   // reported at once, so message is always set
 
     AlertRules(AlertProperties properties) {
         properties.doorOpen().forEach((device, limit) -> doorLimits.put(key(device), limit));
@@ -73,6 +82,7 @@ final class AlertRules {
         properties.finished().forEach(device -> machines.add(key(device)));
         properties.offline().forEach((device, limit) -> offlineLimits.put(key(device), limit));
         this.connectionLostAfter = properties.connectionLostAfter();
+        this.lowBattery = properties.lowBattery();
     }
 
     /**
@@ -176,9 +186,40 @@ final class AlertRules {
                     return List.of(finished(e.device(), time));
                 }
             }
+            case "battery" -> {
+                if (lowBattery == null) break;
+                Matcher m = PERCENT.matcher(value);
+                if (m.matches()) {
+                    double percent = Double.parseDouble(m.group(1));
+                    String reading = new BigDecimal(m.group(1)).stripTrailingZeros().toPlainString() + "%";
+                    if (percent <= lowBattery) return batteryLow(e.device(), reading, time);
+                    if (percent > lowBattery + BATTERY_CLEAR_MARGIN) return batteryFine(device, reading, time);
+                } else if (value.equals("on")) {   // a battery sensor that only says low (on) or normal (off)
+                    return batteryLow(e.device(), "", time);
+                } else if (value.equals("off")) {
+                    return batteryFine(device, "", time);
+                }
+                // "unavailable", or between the limit and the margin: no change
+            }
             default -> { }
         }
         return List.of();
+    }
+
+    private List<Alert> batteryLow(String device, String reading, Instant time) {
+        String key = key(device);
+        if (lowBatteries.containsKey(key)) return List.of();   // reported once, however low it goes
+        Watch w = new Watch(device, time);
+        w.message = name(device) + " battery is low" + (reading.isEmpty() ? "" : ": " + reading) + ". Replace it soon.";
+        lowBatteries.put(key, w);
+        return List.of(new Alert("battery:" + key, Level.PROBLEM, device, w.message, time));
+    }
+
+    private List<Alert> batteryFine(String key, String reading, Instant time) {
+        Watch w = lowBatteries.remove(key);
+        if (w == null) return List.of();
+        return List.of(new Alert("battery:" + key, Level.CLEARED, w.device,
+                name(w.device) + " battery is fine again" + (reading.isEmpty() ? "." : ": " + reading + "."), time));
     }
 
     /** Raises the alerts whose time has come. Call regularly. */
@@ -224,6 +265,8 @@ final class AlertRules {
         offline.forEach((device, w) -> {
             if (w.message != null) active.add(new Alert("offline:" + device, Level.PROBLEM, w.device, w.message, w.since));
         });
+        lowBatteries.forEach((device, w) ->
+                active.add(new Alert("battery:" + device, Level.PROBLEM, w.device, w.message, w.since)));
         if (connectionLost != null && connectionLost.message != null) {
             active.add(new Alert(Alert.CONNECTION_KEY, Level.PROBLEM, HOME_ASSISTANT, connectionLost.message,
                     connectionLost.since));
