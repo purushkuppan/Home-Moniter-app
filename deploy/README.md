@@ -135,7 +135,8 @@ Then:
 2. Install the **Tailscale** app on each phone or laptop and sign in with the same account.
 3. Open **http://kudil:8080** (or `http://<the hub's 100.x.y.z address>:8080`) from anywhere.
 
-Only port 8080 is open to Tailscale devices (`ufw allow in on tailscale0 to any port 8080`); Home Assistant, Cockpit
+Only port 8080 is open to Tailscale devices (two rules at the top of `sudo ufw status numbered`: allow 8080 and deny
+the rest on `tailscale0`); Home Assistant, Cockpit
 and SSH stay home-network only. Protect the Tailscale account with two-factor authentication: whoever can add a device
 to it can open Kudil.
 

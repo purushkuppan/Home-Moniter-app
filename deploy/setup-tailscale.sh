@@ -29,8 +29,13 @@ systemctl enable --now tailscaled
 # --ssh=false: SSH stays as it is (LAN only); Tailscale doesn't take it over.
 tailscale up --hostname="$HOSTNAME_ON_TAILNET" --ssh=false
 
-# Kudil from your Tailscale devices. Nothing else (Home Assistant, Cockpit, SSH) is opened on this interface.
-ufw allow in on tailscale0 to any port "$KUDIL_PORT" proto tcp comment 'Kudil over Tailscale'
+# Kudil from your Tailscale devices, and nothing else (Home Assistant, Cockpit, SSH stay home-network only).
+# ufw stops at the first matching rule, and older rules may allow ports such as 22 or 8123 from anywhere, so these two
+# go at the very top. Removed first, so running the script again puts them back on top instead of skipping them.
+ufw delete allow in on tailscale0 to any port "$KUDIL_PORT" proto tcp >/dev/null 2>&1 || true
+ufw delete deny in on tailscale0 >/dev/null 2>&1 || true
+ufw prepend deny in on tailscale0 comment 'Tailscale: nothing but Kudil'
+ufw prepend allow in on tailscale0 to any port "$KUDIL_PORT" proto tcp comment 'Kudil over Tailscale'
 
 ip4=$(tailscale ip -4 | head -n 1)
 echo
