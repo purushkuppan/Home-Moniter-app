@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Kudil">
-  <!-- Full-bleed version for app icons: phones crop it to their own shape; the hut stays in the safe center. -->
-  <rect width="64" height="64" fill="#1F6E53"/>
-  <path d="M9 34C17 30 24 21 32 12c8 9 15 18 23 22z" fill="#FFFFFF"/>
-  <path d="M18 36h28v16H18z" fill="#FFFFFF"/>
-  <path d="M27 52v-7a5 5 0 0 1 10 0v7z" fill="#1F6E53"/>
-  <rect x="39.5" y="40" width="4.5" height="4.5" rx="1" fill="#F2B24C"/>
-</svg>
