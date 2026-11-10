@@ -40,10 +40,10 @@ class ProdProfileTests {
         assertThat(prod.getProperty("homeassistant.token")).isEqualTo("token-from-systemd-credential");
         assertThat(prod.getProperty("homehub.connectors.homeassistant.enabled")).isEqualTo("true");
         assertThat(prod.getProperty("homehub.connectors.fake.enabled")).isEqualTo("false");
-        // Alerts go to the phone on the hub only, and tapping one opens the hub's dashboard.
+        // Alerts go to the phone on the hub only, and tapping one opens the dashboard through Tailscale (home and away).
         assertThat(prod.getProperty("homehub.alerts.enabled")).isEqualTo("true");
         assertThat(prod.getProperty("homehub.alerts.send-to")).isEqualTo("notify.mobile_app_purushphone");
-        assertThat(prod.getProperty("homehub.alerts.link")).isEqualTo("http://192.168.5.251:8080");
+        assertThat(prod.getProperty("homehub.alerts.link")).isEqualTo("http://kudil:8080");
         // The hub alerts when its nightly backup (deploy/backup.sh) stops; elsewhere there is no backup to watch.
         assertThat(prod.getProperty("homehub.alerts.backup.status-file")).isEqualTo("/var/lib/homehub-backup/last-success");
         // The SmartThings watchdog runs on the hub only, watching the fridge's power reports.
