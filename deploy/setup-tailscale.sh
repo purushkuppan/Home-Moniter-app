@@ -3,12 +3,12 @@
 #   sudo bash setup-tailscale.sh
 # Safe to run again.
 #
-# Joins the hub to your Tailscale network (tailnet) as "home-hub". Only your own signed-in devices can reach it;
+# Joins the hub to your Tailscale network (tailnet) as "kudil". Only your own signed-in devices can reach it;
 # nothing is opened on the router or to the internet. The firewall lets Tailscale devices reach Kudil (8080) only.
 set -euo pipefail
 
 [[ $EUID -eq 0 ]] || { echo "Run it with sudo: sudo bash $0" >&2; exit 1; }
-HOSTNAME_ON_TAILNET=home-hub
+HOSTNAME_ON_TAILNET=kudil   # the app's name, so the address is http://kudil:8080
 KUDIL_PORT=8080
 
 if ! command -v tailscale >/dev/null; then

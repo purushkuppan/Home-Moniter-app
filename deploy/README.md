@@ -131,9 +131,9 @@ One-time setup on the hub (prints a sign-in link the first time):
 cd ~/homehub-deploy && sudo bash setup-tailscale.sh
 ```
 Then:
-1. In the Tailscale admin console (**Machines**), open `home-hub`'s **⋯** menu → **Disable key expiry**.
+1. In the Tailscale admin console (**Machines**), open `kudil`'s **⋯** menu → **Disable key expiry**.
 2. Install the **Tailscale** app on each phone or laptop and sign in with the same account.
-3. Open **http://home-hub:8080** (or `http://<the hub's 100.x.y.z address>:8080`) from anywhere.
+3. Open **http://kudil:8080** (or `http://<the hub's 100.x.y.z address>:8080`) from anywhere.
 
 Only port 8080 is open to Tailscale devices (`ufw allow in on tailscale0 to any port 8080`); Home Assistant, Cockpit
 and SSH stay home-network only. Protect the Tailscale account with two-factor authentication: whoever can add a device
