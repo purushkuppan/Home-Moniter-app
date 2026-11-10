@@ -117,6 +117,29 @@ class EventControllerTests {
     }
 
     @Test
+    void kudilLogoInTheHeaderTabAndOnThePhoneHomeScreen() throws Exception {
+        String page = get("/");
+        String head = page.substring(0, page.indexOf("</head>"));
+        assertThat(head).contains("<link rel=\"icon\" href=\"icons/kudil.svg\" type=\"image/svg+xml\">",
+                "<link rel=\"apple-touch-icon\" href=\"icons/apple-touch-icon.png\">",
+                "<link rel=\"manifest\" href=\"manifest.json\">", "<meta name=\"apple-mobile-web-app-title\" content=\"Kudil\">");
+        // The header shows the hut (doorway and lit window), not the old generic house glyph.
+        assertThat(page).contains("<path class=\"door\"", "<rect class=\"lamp\"").doesNotContain("M12 3 2 11h3v9h5v-6h4v6h5v-9h3z");
+
+        // "Add to Home screen" gets the name Kudil, the icons, and opens full screen.
+        String manifest = get("/manifest.json");
+        assertThat(manifest).contains("\"short_name\": \"Kudil\"", "\"display\": \"standalone\"", "\"purpose\": \"maskable\"");
+        for (String icon : new String[] {"icon-192.png", "icon-512.png", "apple-touch-icon.png", "favicon-32.png"}) {
+            HttpResponse<byte[]> png = http.send(
+                    HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/icons/" + icon)).build(),
+                    HttpResponse.BodyHandlers.ofByteArray());
+            assertThat(png.statusCode()).as(icon).isEqualTo(200);
+            assertThat(png.body()).as(icon).startsWith((byte) 0x89, (byte) 'P', (byte) 'N', (byte) 'G');
+        }
+        assertThat(get("/icons/kudil.svg")).contains("aria-label=\"Kudil\"", "#1F6E53", "#F2B24C");
+    }
+
+    @Test
     void fontsAreServedByKudilAndKeptByBrowsersForAYear() throws Exception {
         for (String font : new String[] {"inter-latin-wght-normal.woff2", "space-grotesk-latin-wght-normal.woff2"}) {
             HttpResponse<byte[]> response = http.send(

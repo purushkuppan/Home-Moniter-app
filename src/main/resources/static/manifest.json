@@ -1,0 +1,16 @@
+{
+  "name": "Kudil – Family Home Monitor",
+  "short_name": "Kudil",
+  "description": "Your home's appliances, doors and alerts at a glance.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#F5F6F3",
+  "theme_color": "#1F6E53",
+  "icons": [
+    { "src": "icons/kudil.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

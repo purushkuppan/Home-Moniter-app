@@ -4,7 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Kudil</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%231F6E53' d='M12 3 2 11h3v9h5v-6h4v6h5v-9h3z'/%3E%3C/svg%3E">
+<link rel="icon" href="icons/kudil.svg" type="image/svg+xml">
+<link rel="icon" href="icons/favicon-32.png" type="image/png" sizes="32x32">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1F6E53">
+<meta name="apple-mobile-web-app-title" content="Kudil">
 <link rel="preload" href="fonts/inter-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
 <script>
   // Theme before the first paint, so the page never flashes the wrong colors. Settings › Appearance, saved in this
@@ -78,6 +83,7 @@
     --idle: #5B6661;    --idle-soft: #EEF0EC;
     --bad: #B42318;     --bad-soft: #FDE9E7;    --on-bad: #FFFFFF;
     --new: #FFF6D6;
+    --lamp: #F2B24C;   /* the lit window in the Kudil logo */
     /* The theme previews in Settings show each theme as it is, so these stay the same in both themes. */
     --preview-light-bg: #F5F6F3;  --preview-light-card: #FFFFFF;  --preview-light-accent: #1F6E53;
     --preview-dark-bg: #0F1412;   --preview-dark-card: #18201C;   --preview-dark-accent: #4FBF94;
@@ -103,6 +109,7 @@
     --idle: #9AA59F;    --idle-soft: #232C28;
     --bad: #FF8A80;     --bad-soft: #3D1A17;    --on-bad: #0F1412;
     --new: #2E2A14;
+    --lamp: #F2B24C;
     --scrim: rgba(0, 0, 0, .6);
     --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 4px 16px rgba(0, 0, 0, .25);
   }
@@ -131,6 +138,10 @@
     width: 38px; height: 38px; border-radius: 11px;
     background: var(--accent); color: var(--on-accent);
   }
+  /* The Kudil hut: roof and walls in the logo's foreground color, the doorway cut out, one lit window. */
+  .logo svg { width: 28px; height: 28px; }
+  .logo .door { fill: var(--accent); }
+  .logo .lamp { fill: var(--lamp); }
   .brand h1 { margin: 0; font-family: var(--font-heading); font-size: 20px; font-weight: 700; color: var(--accent); letter-spacing: -.01em; }
   .brand p { margin: 0; color: var(--muted); font-size: 13px; }
   /* The running release, on every screen size (phones hide the header subtitle). */
@@ -517,7 +528,7 @@
 
 <header>
   <div class="wrap">
-    <div class="logo"><svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3 2 11h3v9h5v-6h4v6h5v-9h3z"/></svg></div>
+    <div class="logo" aria-hidden="true"><svg viewBox="8 9 48 46" fill="currentColor"><path d="M9 34C17 30 24 21 32 12c8 9 15 18 23 22z"/><path d="M18 36h28v16H18z"/><path class="door" d="M27 52v-7a5 5 0 0 1 10 0v7z"/><rect class="lamp" x="39.5" y="40" width="4.5" height="4.5" rx="1"/></svg></div>
     <div class="brand">
       <h1>Kudil</h1>
       <p>Family Home Monitor<span id="appVersion"></span></p>

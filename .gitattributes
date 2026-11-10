@@ -4,3 +4,4 @@
 *.service text eol=lf
 *.timer text eol=lf
 *.woff2 binary
+*.png binary
