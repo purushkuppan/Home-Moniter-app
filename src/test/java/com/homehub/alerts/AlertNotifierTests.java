@@ -2,6 +2,7 @@ package com.homehub.alerts;
 
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
@@ -27,7 +28,7 @@ class AlertNotifierTests {
 
     private static AlertProperties settings(List<String> notify, String link) {
         return new AlertProperties(notify, link, Map.of(), Map.of(), Duration.ofMinutes(15), List.of(), Map.of(), null,
-                null, null, null, null, null);
+                null, null, null, null, null, null);
     }
 
     @Test
@@ -48,6 +49,31 @@ class AlertNotifierTests {
                 settings(List.of("notify.mobile_app_phone_one", "notify.mobile_app_phone_two"), "http://hub:8080"));
 
         notifier.send(DOOR);
+
+        server.verify();
+    }
+
+    @Test
+    void aWaterLeakIsSentAsUrgentButItsAllClearIsNot() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(ExpectedCount.once(), requestTo(URL + "/api/services/notify/mobile_app_phone"))
+                .andExpect(content().json("""
+                        {"title":"Kudil","message":"Water leak in the kitchen",
+                         "data":{"tag":"homehub-leak:kitchen leak sensor","priority":"high","ttl":0,
+                                 "push":{"interruption-level":"time-sensitive"}}}"""))
+                .andRespond(withSuccess());
+        server.expect(ExpectedCount.once(), requestTo(URL + "/api/services/notify/mobile_app_phone"))
+                .andExpect(jsonPath("$.data.priority").doesNotExist())
+                .andExpect(jsonPath("$.message").value("Kitchen leak sensor is dry again."))
+                .andRespond(withSuccess());
+        AlertNotifier notifier = new AlertNotifier(builder, new HomeAssistantProperties(URL, "secret"),
+                settings(List.of("notify.mobile_app_phone"), ""));
+
+        notifier.send(new Alert("leak:kitchen leak sensor", Level.PROBLEM, "Kitchen leak sensor",
+                "Water leak in the kitchen", Instant.parse("2026-11-10T18:00:00Z")));
+        notifier.send(new Alert("leak:kitchen leak sensor", Level.CLEARED, "Kitchen leak sensor",
+                "Kitchen leak sensor is dry again.", Instant.parse("2026-11-10T18:10:00Z")));
 
         server.verify();
     }

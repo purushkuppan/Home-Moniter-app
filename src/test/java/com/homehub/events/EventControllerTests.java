@@ -90,7 +90,7 @@ class EventControllerTests {
         assertThat(home).containsSubsequence("id=\"statusCard\"", "id=\"weather\"", "id=\"quick\"", "id=\"cards\"",
                 "id=\"today\"");
         assertThat(home).contains(">Quick controls<", ">Appliances<", ">Today<", "id=\"seeAll\"");
-        assertThat(page).contains("title = 'All good'", "'Needs attention'", "' door is open'",
+        assertThat(page).contains("title = 'All good'", "'Needs attention'", "doorsOpen[0] + ' is open'",
                 "'Nothing has happened yet today.'");
         // Phones switch sections from a bottom bar; a red dot on Home while something needs attention.
         String nav = page.substring(page.indexOf("<nav class=\"tabs\" id=\"tabs\""));
@@ -201,6 +201,23 @@ class EventControllerTests {
         String page = get("/");
         assertThat(page).contains("function lastFinishedRuns()", "'Last run finished ' + sinceText(d.lastRun)",
                 "'No finished run yet'").doesNotContain("return ['Idle', 'idle', 'Since ' + sinceText(machine.time)];");
+    }
+
+    @Test
+    void zWaveDevicesShowAsDoorLeakSensorAndPlug() throws Exception {
+        String page = get("/");
+        // Back door: Open/Closed with a door icon, and "Back door is open", not "Back door door is open".
+        assertThat(page).contains("door:    '", "if (/door/.test(d) || type === 'contact') return 'door';",
+                "return /\\bdoor$/i.test(name) ? name : name + ' door';", "[doorName(name) + ' opened', 'warn']");
+        // Leak sensor: Dry/Wet with a drop icon; wet is red on the card, in the activity and on the status card.
+        assertThat(page).contains("drop:    '", "if (/leak|water/.test(d) || type === 'leak') return 'drop';",
+                "return ['Wet', 'bad', 'Water detected · since ' + sinceText(leak.time)];", "return ['Dry', 'ok', ",
+                "tone = lower === 'wet' ? 'bad' : lower === 'dry' ? 'ok' : '';", "'status-chip bad', 'Water leak'",
+                "'No leaks'");
+        // Plug: On/Off with its watts, and its power switch in Controls behind the PIN.
+        assertThat(page).contains("plug:    '", "'Using ' + formatValue('power', watts.value)",
+                "const WATTS = /^(-?\\d+(?:\\.\\d+)?) ?W$/i;", "power: 'Power use'",
+                "const what = c.label === 'Power' ? 'the ' + c.device.toLowerCase() : c.label.toLowerCase();");
     }
 
     @Test

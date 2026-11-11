@@ -249,6 +249,7 @@
   .status-chip { padding: 6px 10px; border-radius: 999px; background: var(--surface-2); font-size: 13px; }
   .status-chip.warn { background: var(--warn-soft); color: var(--warn); font-weight: 600; }
   .status-chip.info { background: var(--info-soft); color: var(--info); }
+  .status-chip.bad { background: var(--bad-soft); color: var(--bad); font-weight: 600; }
   .alert-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
   .alert-item {
     display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px;
@@ -696,6 +697,9 @@ const ICONS = {
   lock:    '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
   thermo:  '<path d="M14 14.8V5a2 2 0 0 0-4 0v9.8a4 4 0 1 0 4 0z"/>',
   bell:    '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
+  door:    '<path d="M5 21V4a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v17"/><path d="M3 21h18M15 12h.01"/>',
+  drop:    '<path d="M12 2.7s-6 6.4-6 11.3a6 6 0 0 0 12 0c0-4.9-6-11.3-6-11.3z"/>',
+  plug:    '<path d="M9 2v6M15 2v6M6 8h12v3a6 6 0 0 1-12 0z"/><path d="M12 17v5"/>',
   // Weather
   sun:     '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
   moon:    '<path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>',
@@ -744,14 +748,23 @@ function iconFor(device, type) {
   if (/fridge|refrigerator|freezer|cooler/.test(d)) return 'fridge';
   if (/dryer/.test(d)) return 'dryer';
   if (/wash/.test(d)) return 'washer';
-  if (/lock|door/.test(d) || type === 'lock') return 'lock';
+  if (/leak|water/.test(d) || type === 'leak') return 'drop';
+  if (/plug|outlet/.test(d) || type === 'switch' || type === 'power') return 'plug';
+  if (/lock/.test(d) || type === 'lock') return 'lock';
+  if (/door/.test(d) || type === 'contact') return 'door';
   if (/thermostat/.test(d) || type === 'temperature') return 'thermo';
   return 'device';
 }
 
 /** "machineState" -> "Machine state" */
 // Friendlier names for technical reading types. Display only: the database keeps the original type.
-const TYPE_LABELS = { contact: 'Door', command: 'Command', alert: 'Alert', alertCleared: 'All clear', notice: 'Notice' };
+const TYPE_LABELS = { contact: 'Door', command: 'Command', alert: 'Alert', alertCleared: 'All clear', notice: 'Notice',
+  leak: 'Water', switch: 'Power', power: 'Power use' };
+
+/** "Fridge" -> "Fridge door", but "Back door" stays "Back door". */
+function doorName(name) {
+  return /\bdoor$/i.test(name) ? name : name + ' door';
+}
 // Events HomeHub writes itself: shown in the activity list, never as a device reading.
 const ALERT_TYPES = ['alert', 'alertCleared', 'notice'];
 const NOT_READINGS = new Set(['command', ...ALERT_TYPES]);
@@ -768,6 +781,8 @@ function badge(type, value) {
   let tone = '';
   if (type === 'alert' || lower === 'unavailable') tone = 'bad';   // also for a temperature that has no value
   else if (type === 'temperature' || type === 'command') tone = 'temp';
+  else if (type === 'leak') tone = lower === 'wet' ? 'bad' : lower === 'dry' ? 'ok' : '';
+  else if (type === 'switch') tone = lower === 'on' ? 'active' : '';
   else if (type === 'alertCleared' || type === 'notice') tone = 'ok';
   else if (['closed', 'locked', 'done', 'finished', 'finish'].includes(lower)) tone = 'ok';
   else if (['open', 'unlocked', 'pause', 'paused'].includes(lower)) tone = 'warn';
@@ -782,6 +797,10 @@ function formatValue(type, value) {
   if (type === 'temperature' && /^-?\d/.test(value)) {
     const m = TEMP_READING.exec(value);   // "37.5 F"; a number without a unit is shown as it is
     return m ? showTemp(m[1], m[2]) : value;
+  }
+  if (type === 'power') {
+    const m = WATTS.exec(value);   // "12.46 W" -> "12.5 W", "60.0 W" -> "60 W"
+    if (m) { const n = Number(m[1]); return (n < 10 ? oneDecimal(n) : Math.round(n)) + String.fromCharCode(160) + 'W'; }
   }
   const text = keepTogether(convertTemps(value.replace(/_/g, ' ')));
   return text ? text.charAt(0).toUpperCase() + text.slice(1) : '—';
@@ -798,6 +817,7 @@ function keepTogether(text) {
 const UNIT_KEY = 'homehub.tempUnit';
 const TEMP_READING = /^(-?\d+(?:\.\d+)?) ?([FC])$/i;            // a temperature event's value: "37.5 F"
 const TEMP_IN_TEXT = /(-?\d+(?:\.\d+)?) ?°([FC])\b/g;           // inside a message: "too warm: 47.5 °F (above 45 °F"
+const WATTS = /^(-?\d+(?:\.\d+)?) ?W$/i;                        // a power event's value: "12.5 W"
 let unitChoice = null;   // 'F' or 'C' once chosen; null = show every temperature in the unit it came in
 
 /** Converts a temperature to the chosen unit: { n, unit, converted }. `from` is 'F' or 'C'. */
@@ -933,12 +953,24 @@ function applianceSummary(d) {
   const readings = [...d.readings.values()];
   const offline = offlineAlert(d.name);
   if (offline) return ['Offline', 'bad', 'Since ' + sinceText(new Date(offline.time))];
+  const leak = readings.find(r => r.type === 'leak');
+  if (leak && lower(leak.value) === 'wet') return ['Wet', 'bad', 'Water detected · since ' + sinceText(leak.time)];
+  if (leak && lower(leak.value) === 'dry') return ['Dry', 'ok', 'No water · updated ' + timeAgo(d.updated)];
+  const plug = readings.find(r => r.type === 'switch');
+  if (plug) {
+    const watts = readings.find(r => r.type === 'power');
+    const using = watts && WATTS.test(watts.value || '') ? 'Using ' + formatValue('power', watts.value) : '';
+    if (lower(plug.value) === 'on') return ['On', 'info', using || 'Since ' + sinceText(plug.time)];
+    if (lower(plug.value) === 'off') return ['Off', 'idle', 'Since ' + sinceText(plug.time)];
+  }
   const temps = readings.filter(r => r.type === 'temperature')
     .map(r => (r.part ? prettyType(r.part) + ' ' : '') + formatValue(r.type, (r.value ?? '').toString()));
   const doors = readings.filter(r => r.type === 'contact');
   const open = doors.filter(r => lower(r.value) === 'open');
+  // "Fridge · since 4:51 PM" for a part's door; just "Since 4:51 PM" when the device is the door (Back door).
+  const openParts = open.filter(r => r.part).map(r => prettyType(r.part)).join(', ');
   if (open.length) return [open.length === 1 ? 'Door open' : open.length + ' doors open', 'warn',
-    open.map(r => prettyType(r.part || d.name)).join(', ') + ' · since ' + sinceText(open[0].time)];
+    openParts ? openParts + ' · since ' + sinceText(open[0].time) : 'Since ' + sinceText(open[0].time)];
   const machine = readings.find(r => /machinestate$/i.test(r.type));
   const job = readings.find(r => /jobstate$/i.test(r.type));
   if (machine) {
@@ -1014,8 +1046,10 @@ function renderStatus() {
   const summaries = devices.map(d => [d, applianceSummary(d)]);
   const doors = current.filter(e => e.type === 'contact');
   const doorsOpen = doors.filter(e => lower(e.value) === 'open')
-    .map(e => { const { main, part } = splitDevice(e.device); return prettyType(part || main); });
+    .map(e => { const { main, part } = splitDevice(e.device); return doorName(prettyType(part || main)); });
   const hasDoors = doors.length > 0;
+  const leaks = current.filter(e => e.type === 'leak');
+  const wet = leaks.filter(e => lower(e.value) === 'wet');
 
   let tone = 'ok', title = 'All good';
   if (activeAlerts.length) {
@@ -1023,7 +1057,7 @@ function renderStatus() {
     title = activeAlerts.length === 1 ? 'Needs attention' : activeAlerts.length + ' things need attention';
   } else if (doorsOpen.length) {
     tone = 'warn';
-    title = doorsOpen.length === 1 ? doorsOpen[0] + ' door is open' : doorsOpen.length + ' doors are open';
+    title = doorsOpen.length === 1 ? doorsOpen[0] + ' is open' : doorsOpen.length + ' doors are open';
   } else if (!devices.length) {
     title = 'Waiting for the first reading';
   }
@@ -1040,8 +1074,13 @@ function renderStatus() {
   const chips = el('div', 'status-chips');
   if (hasDoors) {
     chips.append(doorsOpen.length
-      ? el('span', 'status-chip warn', doorsOpen.join(', ') + (doorsOpen.length === 1 ? ' door open' : ' doors open'))
+      ? el('span', 'status-chip warn', doorsOpen.join(', ') + ' open')
       : el('span', 'status-chip', 'Doors closed'));
+  }
+  if (leaks.length) {
+    chips.append(wet.length
+      ? el('span', 'status-chip bad', 'Water leak')
+      : el('span', 'status-chip', 'No leaks'));
   }
   for (const [d, s] of summaries) {
     if (s[0] === 'Running') chips.append(el('span', 'status-chip info', d.name + ' running'));
@@ -1079,9 +1118,18 @@ function describe(e) {
   if (e.type === 'notice') return [convertTemps(e.value || 'Notice'), 'info'];
   if (e.type === 'command') return [main + ': ' + convertTemps(e.value || 'changed'), 'idle'];
   if (e.type === 'contact') {
-    if (v === 'open') return [name + ' door opened', 'warn'];
-    if (v === 'closed') return [name + ' door closed', 'ok'];
+    if (v === 'open') return [doorName(name) + ' opened', 'warn'];
+    if (v === 'closed') return [doorName(name) + ' closed', 'ok'];
   }
+  if (e.type === 'leak') {
+    if (v === 'wet') return [name + ': water detected', 'bad'];
+    if (v === 'dry') return [name + ': dry', 'ok'];
+  }
+  if (e.type === 'switch') {
+    if (v === 'on') return [main + ' turned on', 'info'];
+    if (v === 'off') return [main + ' turned off', 'idle'];
+  }
+  if (e.type === 'power') return [main + ' using ' + formatValue(e.type, e.value ?? ''), 'idle'];
   if (/machinestate$/i.test(e.type)) {
     if (v === 'run' || v === 'running') return [main + ' started', 'info'];
     if (v === 'pause' || v === 'paused') return [main + ' paused', 'warn'];
@@ -1500,7 +1548,9 @@ function controlRow(c) {
     const on = c.value === 'on';
     actions.append(button(on ? 'On' : 'Off', () => {
       const next = on ? 'off' : 'on';
-      if (confirm('Turn ' + c.label.toLowerCase() + ' ' + next + '?')) sendCommand(c, next);
+      // A plug's only switch is its power: "Turn the indoor smart plug off?" rather than "Turn power off?"
+      const what = c.label === 'Power' ? 'the ' + c.device.toLowerCase() : c.label.toLowerCase();
+      if (confirm('Turn ' + what + ' ' + next + '?')) sendCommand(c, next);
     }, on ? 'on' : ''));
   } else if (c.kind === 'cycle') {
     const seg = el('div', 'seg');

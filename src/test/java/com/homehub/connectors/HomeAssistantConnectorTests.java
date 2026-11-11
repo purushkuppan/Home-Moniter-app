@@ -14,6 +14,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import com.homehub.events.Event;
+import com.homehub.homeassistant.EntityNames;
 import com.homehub.homeassistant.HomeAssistantProperties;
 import com.homehub.homeassistant.HomeAssistantStatus;
 import java.net.http.WebSocket;
@@ -24,6 +25,7 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.http.HttpMethod;
@@ -180,6 +182,94 @@ class HomeAssistantConnectorTests {
         // The phone's own battery level (Companion app) is not a home device: not included.
         assertThat(events).extracting(Event::device, Event::type, Event::value)
                 .containsExactly(tuple("Leak sensor", "battery", "15 %"));
+    }
+
+    // ---------------------------------------------------------------- Z-Wave devices (#36)
+
+    private static final String Z_WAVE = """
+            binary_sensor.living_room_backdoor_openclose,binary_sensor.kitchen_water_leak_xs_sensor_water_leak_detected,\
+            switch.indoor_smart_plug,sensor.indoor_smart_plug_electric_consumption_w,\
+            sensor.kitchen_water_leak_xs_sensor_battery_level""";
+
+    private static final EntityNames Z_WAVE_NAMES = new EntityNames(Map.of(
+            "binary_sensor.living_room_backdoor_openclose", "Back door",
+            "binary_sensor.kitchen_water_leak_xs_sensor_water_leak_detected", "Kitchen leak sensor",
+            "sensor.kitchen_water_leak_xs_sensor_battery_level", "Kitchen leak sensor",
+            "sensor.indoor_smart_plug_electric_consumption_w", "Indoor Smart Plug"));
+
+    /** The Z-Wave entities as Home Assistant reports them (real ids, device classes and names from the hub). */
+    private static String zWaveStates(String door, String leak, String plug, String watts) {
+        return """
+                [{"entity_id":"binary_sensor.living_room_backdoor_openclose","state":"%s",
+                  "attributes":{"device_class":"door","friendly_name":"Backdoor openclose"}},
+                 {"entity_id":"binary_sensor.kitchen_water_leak_xs_sensor_water_leak_detected","state":"%s",
+                  "attributes":{"device_class":"moisture","friendly_name":"Water Leak XS Sensor Water leak detected"}},
+                 {"entity_id":"sensor.kitchen_water_leak_xs_sensor_battery_level","state":"90",
+                  "attributes":{"device_class":"battery","unit_of_measurement":"%%","friendly_name":"Water Leak XS Sensor Battery level"}},
+                 {"entity_id":"switch.indoor_smart_plug","state":"%s",
+                  "attributes":{"friendly_name":"Indoor Smart Plug"}},
+                 {"entity_id":"sensor.indoor_smart_plug_electric_consumption_w","state":"%s",
+                  "attributes":{"device_class":"power","unit_of_measurement":"W","friendly_name":"Indoor Smart Plug Electric Consumption [W]"}},
+                 {"entity_id":"sensor.indoor_smart_plug_voltage","state":"121",
+                  "attributes":{"device_class":"voltage","unit_of_measurement":"V","friendly_name":"Indoor Smart Plug Electric Consumption [V]"}}]
+                """.formatted(door, leak, plug, watts);
+    }
+
+    private static final String Z_WAVE_DEVICES = """
+            binary_sensor.living_room_backdoor_openclose|Backdoor openclose
+            binary_sensor.kitchen_water_leak_xs_sensor_water_leak_detected|Water Leak XS Sensor
+            sensor.kitchen_water_leak_xs_sensor_battery_level|Water Leak XS Sensor
+            switch.indoor_smart_plug|Indoor Smart Plug
+            sensor.indoor_smart_plug_electric_consumption_w|Indoor Smart Plug
+            """;
+
+    private static HomeAssistantConnector zWave(MockRestServiceServer server, RestClient.Builder builder, String... polls) {
+        expectStates(server, polls[0]);
+        server.expect(requestTo(URL + "/api/template")).andRespond(withSuccess(Z_WAVE_DEVICES, MediaType.TEXT_PLAIN));
+        for (int i = 1; i < polls.length; i++) expectStates(server, polls[i]);
+        return new HomeAssistantConnector(builder, PROPS, Z_WAVE, null, status -> { }, Duration.ZERO, Clock.systemUTC(),
+                Duration.ZERO, Z_WAVE_NAMES);
+    }
+
+    @Test
+    void zWaveDevicesGetTheirDashboardNamesAndReadableValues() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        var connector = zWave(server, builder, zWaveStates("off", "off", "on", "12.5"),
+                zWaveStates("on", "on", "off", "0.0"));
+
+        assertThat(connector.poll()).extracting(Event::device, Event::type, Event::value).containsExactlyInAnyOrder(
+                tuple("Back door", "contact", "closed"),
+                tuple("Kitchen leak sensor", "leak", "dry"),
+                tuple("Kitchen leak sensor", "battery", "90 %"),
+                tuple("Indoor Smart Plug", "switch", "on"),
+                tuple("Indoor Smart Plug", "power", "12.5 W"));   // the voltage sensor is not included
+        assertThat(connector.poll()).extracting(Event::device, Event::type, Event::value).containsExactlyInAnyOrder(
+                tuple("Back door", "contact", "open"),
+                tuple("Kitchen leak sensor", "leak", "wet"),
+                tuple("Indoor Smart Plug", "switch", "off"),
+                tuple("Indoor Smart Plug", "power", "0.0 W"));
+        server.verify();
+    }
+
+    @Test
+    void smallPowerChangesAreNotStored() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        String[] watts = {"60.0", "62.1", "57.9", "64.9", "66.0", "0.0", "0.4", "3.0", "unavailable", "3.0"};
+        String[] polls = new String[watts.length];
+        for (int i = 0; i < watts.length; i++) polls[i] = zWaveStates("off", "off", "on", watts[i]);
+        var connector = zWave(server, builder, polls);
+
+        List<String> stored = new ArrayList<>();
+        for (int i = 0; i < watts.length; i++) {
+            connector.poll().stream().filter(e -> e.type().equals("power")).forEach(e -> stored.add(e.value()));
+        }
+        server.verify();
+
+        // Within 5 W of the last stored value: skipped (62.1, 57.9, 64.9 against 60). 66 is 6 W more. Off (0) and back on
+        // (0.4, however small) always count; 3.0 is within 5 W of 0.4; after "unavailable" any value counts again.
+        assertThat(stored).containsExactly("60.0 W", "66.0 W", "0.0 W", "0.4 W", "unavailable", "3.0 W");
     }
 
     @Test

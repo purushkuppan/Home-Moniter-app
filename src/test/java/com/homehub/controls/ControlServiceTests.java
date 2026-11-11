@@ -162,6 +162,42 @@ class ControlServiceTests {
     }
 
     @Test
+    void theSmartPlugIsOnTheAllowlistAndTurnsItsPowerOnAndOff() throws Exception {
+        var properties = new java.util.Properties();
+        try (var in = new org.springframework.core.io.ClassPathResource("application.properties").getInputStream()) {
+            properties.load(in);
+        }
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer plugServer = MockRestServiceServer.bindTo(builder).build();
+        var plug = new ControlService(builder, new HomeAssistantProperties(URL, "secret"),
+                properties.getProperty("homehub.controls.entities"), audit::add);
+        assertThat(plug.isAllowed("switch.indoor_smart_plug")).isTrue();
+        assertThat(plug.isAllowed("switch.indoor_smart_plug_2")).as("only that plug").isFalse();
+
+        String state = """
+                {"entity_id":"switch.indoor_smart_plug","state":"off","attributes":{"friendly_name":"Indoor Smart Plug"}}""";
+        for (String value : List.of("on", "off")) {
+            plugServer.expect(ExpectedCount.once(), requestTo(URL + "/api/states/switch.indoor_smart_plug"))
+                    .andRespond(withSuccess(state, MediaType.APPLICATION_JSON));
+            if (value.equals("on")) {   // the device name is looked up once
+                plugServer.expect(ExpectedCount.once(), requestTo(URL + "/api/template"))
+                        .andRespond(withSuccess("switch.indoor_smart_plug|Indoor Smart Plug\n", MediaType.TEXT_PLAIN));
+            }
+            plugServer.expect(ExpectedCount.once(), requestTo(URL + "/api/services/switch/turn_" + value))
+                    .andExpect(content().json("{\"entity_id\":\"switch.indoor_smart_plug\"}"))
+                    .andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
+        }
+
+        assertThat(plug.apply("switch.indoor_smart_plug", "on")).isEqualTo("Power turned on");
+        assertThat(plug.apply("switch.indoor_smart_plug", "off")).isEqualTo("Power turned off");
+        plugServer.verify();
+        // Logged as commands of the plug, next to its on/off and watts readings.
+        assertThat(audit).extracting(Event::device, Event::type, Event::value).containsExactly(
+                tuple("Indoor Smart Plug", "command", "Power turned on"),
+                tuple("Indoor Smart Plug", "command", "Power turned off"));
+    }
+
+    @Test
     void refusesUnknownOptions() {
         expectState(WASHER);
         expectDeviceNames();
