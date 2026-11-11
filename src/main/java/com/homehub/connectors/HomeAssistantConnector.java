@@ -21,6 +21,8 @@ import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -58,7 +60,8 @@ import tools.jackson.databind.json.JsonMapper;
  * </ul>
  * Only entities whose id matches one of the include patterns are used. Each entity becomes an event named after its
  * Home Assistant device (for example "Refrigerator/Fridge", type "contact", value "closed"), and an event is only
- * recorded when the value changed. The URL and token come from {@link HomeAssistantProperties}; the token is never logged.
+ * recorded when the value changed. "Unavailable" is held back for {@code unavailable-grace} (2 minutes), so a SmartThings
+ * reload that drops every entity for a few seconds leaves nothing behind. The URL and token come from {@link HomeAssistantProperties}; the token is never logged.
  */
 @Component
 @ConditionalOnProperty(name = "homehub.connectors.homeassistant.enabled", havingValue = "true")
@@ -85,6 +88,15 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
     /** While live updates work, poll this seldom (a safety net); while they don't, on every scheduler run. */
     private final Duration pollWhileLive;
     private final Clock clock;
+    /**
+     * How long an "unavailable" (or "unknown") reading is held back before it is stored. A SmartThings reload makes every
+     * Samsung entity unavailable for a few seconds; a reading that comes back within this time is never recorded.
+     */
+    private final Duration unavailableGrace;
+    /** Unavailable readings waiting out the grace period, per entity id (insertion order = oldest first). */
+    private final Map<String, Held> held = new LinkedHashMap<>();
+
+    private record Held(Event event, Instant since) { }
 
     // Live updates
     private final Consumer<Event> liveSink;   // null = live updates off
@@ -109,10 +121,11 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
             @Value("${homehub.connectors.homeassistant.include:" + DEFAULT_INCLUDE + "}") String include,
             @Value("${homehub.connectors.homeassistant.live:true}") boolean live,
             @Value("${homehub.connectors.homeassistant.poll-while-live:5m}") Duration pollWhileLive,
+            @Value("${homehub.connectors.homeassistant.unavailable-grace:2m}") Duration unavailableGrace,
             EventRepository repository,
             ApplicationEventPublisher publisher) {
         this(RestClient.builder(), properties, include, live ? repository::saveIfChanged : null, publisher::publishEvent,
-                pollWhileLive, Clock.systemUTC());
+                pollWhileLive, Clock.systemUTC(), unavailableGrace);
     }
 
     /** Lets tests supply a builder bound to a mock server and their own sink for live events. */
@@ -127,16 +140,24 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
         this(builder, properties, include, liveSink, statusSink, Duration.ZERO, Clock.systemUTC());
     }
 
-    /** Also lets tests set how often to poll while live updates work, and the clock. */
+    /** Also lets tests set how often to poll while live updates work, and the clock. Unavailable is stored at once. */
     HomeAssistantConnector(RestClient.Builder builder, HomeAssistantProperties properties, String include,
                            Consumer<Event> liveSink, Consumer<HomeAssistantStatus> statusSink,
                            Duration pollWhileLive, Clock clock) {
+        this(builder, properties, include, liveSink, statusSink, pollWhileLive, clock, Duration.ZERO);
+    }
+
+    /** Also lets tests set how long "unavailable" is held back. */
+    HomeAssistantConnector(RestClient.Builder builder, HomeAssistantProperties properties, String include,
+                           Consumer<Event> liveSink, Consumer<HomeAssistantStatus> statusSink,
+                           Duration pollWhileLive, Clock clock, Duration unavailableGrace) {
         this.configured = properties.isConfigured();
         this.include = EntityPatterns.parse(include);
         this.liveSink = liveSink;
         this.statusSink = statusSink;
         this.pollWhileLive = pollWhileLive == null ? Duration.ZERO : pollWhileLive;
         this.clock = clock;
+        this.unavailableGrace = unavailableGrace == null || unavailableGrace.isNegative() ? Duration.ZERO : unavailableGrace;
         if (configured) {
             String base = properties.url().trim().replaceAll("/+$", "");
             this.token = properties.token().trim();
@@ -167,9 +188,10 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
             return List.of();
         }
         Instant pollStarted = clock.instant();
+        List<Event> due = releaseHeld(pollStarted);   // readings that stayed unavailable past the grace period
         if (liveConnected && lastPollAt != null && pollStarted.isBefore(lastPollAt.plus(pollWhileLive))) {
             // Live updates already bring every change the moment it happens; polling is only the safety net.
-            return List.of();
+            return due;
         }
         boolean ok = false;
         try {
@@ -179,16 +201,14 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
                     .toList();
             resolveDeviceNames(wanted.stream().map(s -> text(s.get("entity_id"))).toList());
 
-            List<Event> changed = new ArrayList<>();
+            List<Event> changed = new ArrayList<>(due);
             for (Map<String, Object> state : wanted) {
                 // A change since the previous poll keeps Home Assistant's change time. Anything else (the first poll,
                 // or a value we just haven't seen) is stamped "now", so old Home Assistant times don't look like news.
                 Instant changedAt = parseTime(state.get("last_changed"));
                 Instant time = lastPollAt != null && changedAt != null && changedAt.isAfter(lastPollAt) ? changedAt : pollStarted;
                 Event event = toEvent(state, time);
-                if (!event.value().equals(lastValues.put(text(state.get("entity_id")), event.value()))) {
-                    changed.add(event);
-                }
+                if (record(text(state.get("entity_id")), event, pollStarted)) changed.add(event);
             }
             lastPollAt = pollStarted;
             ok = true;
@@ -206,7 +226,37 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
             lastPollOk = ok;
             reportStatus();
         }
-        return List.of();
+        return due;
+    }
+
+    /**
+     * Remembers a reading and says whether to store it now. An "unavailable" or "unknown" reading is held for the grace
+     * period first: if a real value comes back in time it is dropped, and a value equal to the one before is no change.
+     */
+    private boolean record(String entityId, Event event, Instant now) {
+        if (!unavailableGrace.isZero() && isUnavailable(event.value())) {
+            if (!event.value().equals(lastValues.get(entityId))) held.putIfAbsent(entityId, new Held(event, now));
+            return false;
+        }
+        if (held.remove(entityId) != null) log.debug("{} was briefly unavailable; not recorded", event.device());
+        return !event.value().equals(lastValues.put(entityId, event.value()));
+    }
+
+    /** The held readings whose grace period is over: they are stored with the time they became unavailable. */
+    private List<Event> releaseHeld(Instant now) {
+        List<Event> due = new ArrayList<>();
+        for (Iterator<Map.Entry<String, Held>> it = held.entrySet().iterator(); it.hasNext(); ) {
+            Map.Entry<String, Held> entry = it.next();
+            Held h = entry.getValue();
+            if (now.isBefore(h.since().plus(unavailableGrace))) continue;
+            it.remove();
+            if (!h.event().value().equals(lastValues.put(entry.getKey(), h.event().value()))) due.add(h.event());
+        }
+        return due;
+    }
+
+    private static boolean isUnavailable(String value) {
+        return "unavailable".equals(value) || "unknown".equals(value);
     }
 
     /** Publishes a {@link HomeAssistantStatus} when reachability changed (and once at the start). */
@@ -333,7 +383,7 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
         }
         Instant changedAt = parseTime(state.get("last_changed"));
         Event event = toEvent(state, changedAt != null ? changedAt : Instant.now());
-        if (!event.value().equals(lastValues.put(entityId, event.value()))) {
+        if (record(entityId, event, clock.instant())) {
             log.debug("Live: {} {} = {}", event.device(), event.type(), event.value());
             liveSink.accept(event);
         }

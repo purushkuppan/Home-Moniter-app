@@ -246,6 +246,107 @@ class HomeAssistantConnectorTests {
         server.verify();   // exactly four requests
     }
 
+    // ---------------------------------------------------------------- "unavailable" grace period (#92)
+
+    private static final String POWER = "sensor.kitchen_refrigerator_power";
+
+    private static String power(String state, String changed) {
+        return """
+                {"id":1,"type":"event","event":{"event_type":"state_changed","data":{"entity_id":"%1$s",
+                 "new_state":{"entity_id":"%1$s","state":"%2$s","last_changed":"%3$s",
+                  "attributes":{"device_class":"power","unit_of_measurement":"W","friendly_name":"Refrigerator Power"}}}}}
+                """.formatted(POWER, state, changed);
+    }
+
+    /** A live connector with a 2-minute grace period whose polls skip Home Assistant (live updates are working). */
+    private static HomeAssistantConnector liveWithGrace(List<Event> saved, TestClock clock, WebSocket ws) {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        expectStates(server, "[]");
+        server.expect(ExpectedCount.manyTimes(), requestTo(URL + "/api/template"))
+                .andRespond(withSuccess(POWER + "|Refrigerator\n", MediaType.TEXT_PLAIN));
+        var connector = new HomeAssistantConnector(builder, PROPS, "sensor.*_power", saved::add, status -> { },
+                Duration.ofHours(1), clock, Duration.ofMinutes(2));
+        connector.handleMessage(ws, "{\"type\":\"auth_ok\"}");
+        assertThat(connector.poll()).isEmpty();   // the startup poll
+        return connector;
+    }
+
+    @Test
+    void aBriefUnavailableLikeASmartThingsReloadLeavesNoTrace() {
+        List<Event> saved = new ArrayList<>();
+        TestClock clock = new TestClock();
+        WebSocket ws = mock(WebSocket.class);
+        var connector = liveWithGrace(saved, clock, ws);
+
+        connector.handleMessage(ws, power("120", "2026-11-08T18:00:00+00:00"));
+        connector.handleMessage(ws, power("unavailable", "2026-11-08T18:00:10+00:00"));   // the reload
+        clock.now = clock.now.plusSeconds(15);
+        connector.handleMessage(ws, power("120", "2026-11-08T18:00:25+00:00"));           // back, same value
+        clock.now = clock.now.plusSeconds(300);
+
+        assertThat(connector.poll()).isEmpty();
+        assertThat(saved).extracting(Event::value).containsExactly("120 W");
+    }
+
+    @Test
+    void comingBackWithANewValueIsStoredButTheGapIsNot() {
+        List<Event> saved = new ArrayList<>();
+        TestClock clock = new TestClock();
+        WebSocket ws = mock(WebSocket.class);
+        var connector = liveWithGrace(saved, clock, ws);
+
+        connector.handleMessage(ws, power("120", "2026-11-08T18:00:00+00:00"));
+        connector.handleMessage(ws, power("unknown", "2026-11-08T18:00:10+00:00"));
+        clock.now = clock.now.plusSeconds(20);
+        connector.handleMessage(ws, power("3", "2026-11-08T18:00:30+00:00"));
+
+        assertThat(saved).extracting(Event::value).containsExactly("120 W", "3 W");
+    }
+
+    @Test
+    void aDeviceThatStaysUnavailableIsStoredAfterTheGracePeriodWithItsOriginalTime() {
+        List<Event> saved = new ArrayList<>();
+        TestClock clock = new TestClock();
+        WebSocket ws = mock(WebSocket.class);
+        var connector = liveWithGrace(saved, clock, ws);
+
+        connector.handleMessage(ws, power("120", "2026-11-08T18:00:00+00:00"));
+        connector.handleMessage(ws, power("unavailable", "2026-11-08T18:00:10+00:00"));
+        clock.now = clock.now.plusSeconds(90);
+        assertThat(connector.poll()).as("still within 2 minutes").isEmpty();
+        clock.now = clock.now.plusSeconds(30);
+        assertThat(connector.poll()).extracting(Event::device, Event::value, Event::time)
+                .containsExactly(tuple("Refrigerator", "unavailable", Instant.parse("2026-11-08T18:00:10Z")));
+        clock.now = clock.now.plusSeconds(30);
+        assertThat(connector.poll()).as("stored once").isEmpty();
+
+        // Coming back later is a change again.
+        connector.handleMessage(ws, power("120", "2026-11-08T19:00:00+00:00"));
+        assertThat(saved).extracting(Event::value).containsExactly("120 W", "120 W");
+    }
+
+    @Test
+    void pollingAlsoHoldsUnavailableBack() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        expectStates(server, states("off", "run"));
+        server.expect(requestTo(URL + "/api/template"))
+                .andRespond(withSuccess("sensor.laundry_room_washer_machine_state|Washer\n", MediaType.TEXT_PLAIN));
+        expectStates(server, states("off", "unavailable"));
+        expectStates(server, states("off", "run"));
+        TestClock clock = new TestClock();
+        var connector = new HomeAssistantConnector(builder, PROPS, "sensor.*_machine_state", null, status -> { },
+                Duration.ZERO, clock, Duration.ofMinutes(2));
+
+        assertThat(connector.poll()).extracting(Event::value).containsExactly("run");
+        clock.now = clock.now.plusSeconds(30);
+        assertThat(connector.poll()).as("unavailable is held").isEmpty();
+        clock.now = clock.now.plusSeconds(30);
+        assertThat(connector.poll()).as("back to the same value: nothing changed").isEmpty();
+        server.verify();
+    }
+
     @Test
     void missingSettingsMakeNoRequests() {
         RestClient.Builder builder = RestClient.builder();
