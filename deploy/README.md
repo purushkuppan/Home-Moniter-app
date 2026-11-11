@@ -142,6 +142,15 @@ to it can open Kudil.
 
 Useful commands: `tailscale status` (devices and addresses), `tailscale ip -4`, `sudo tailscale down` / `up`.
 
+## Firewall
+`setup-firewall.sh` (also run by `setup-hub.sh`) opens Kudil (8080), Cockpit (9090) and Home Assistant (8123) to the
+home network `192.168.4.0/22` only, and removes older rules that opened them to anyone. SSH is left as it is.
+```bash
+cd ~/homehub-deploy && sudo bash setup-firewall.sh
+```
+`sudo ufw status numbered` then shows, from the top: the two Tailscale rules, SSH, the three home-network rules and
+Tailscale's own port 41641/udp. The hub's IPv6 address is a private home one, so the IPv4 rules are all the home needs.
+
 ## Secrets
 Never in git, issues, pull requests or chat.
 

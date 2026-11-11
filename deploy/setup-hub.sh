@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # One-time setup on home-hub. Run from the repo folder on the hub:
 #   sudo bash deploy/setup-hub.sh
-# Safe to run again. It does not remove existing firewall rules.
+# Safe to run again. The firewall step removes rules that opened 8080, 9090 or 8123 to anyone (setup-firewall.sh).
 set -euo pipefail
 
 LAN=192.168.4.0/22   # whole home network: 192.168.4.0 - 192.168.7.255 (PC, phones and hub)
@@ -46,14 +46,12 @@ echo "ghrunner ALL=(root) NOPASSWD: /opt/homehub/bin/install-release.sh" > /etc/
 chmod 0440 /etc/sudoers.d/homehub-deploy
 visudo -cf /etc/sudoers.d/homehub-deploy
 
-# Firewall: dashboard and Cockpit only from the home network
-ufw allow from "$LAN" to any port 8080 proto tcp
-ufw allow from "$LAN" to any port 9090 proto tcp
+# Firewall: Kudil, Cockpit and Home Assistant only from the home network (removes rules that opened them to anyone)
+LAN="$LAN" bash "$HERE/setup-firewall.sh"
 
 echo
 echo "Done. Next:"
 echo " 1. Put the Home Assistant token in /etc/homehub/credentials/homeassistant.token (see deploy/README.md)"
 echo "    and any other secrets in /etc/homehub/homehub.env (sudo nano /etc/homehub/homehub.env)"
-echo " 2. Remove the old open rules for 8080 and 9090: sudo ufw status numbered, then sudo ufw delete <number>"
-echo " 3. Make a first backup now: sudo systemctl start homehub-backup, then ls -l /var/backups/homehub"
-echo " 4. Install the GitHub runner for automatic deploys: sudo bash setup-runner.sh (see deploy/README.md)"
+echo " 2. Make a first backup now: sudo systemctl start homehub-backup, then ls -l /var/backups/homehub"
+echo " 3. Install the GitHub runner for automatic deploys: sudo bash setup-runner.sh (see deploy/README.md)"
