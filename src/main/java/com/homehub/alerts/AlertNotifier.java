@@ -77,6 +77,12 @@ public class AlertNotifier {
             data.put("url", link);           // iPhone: opened on tap
             data.put("clickAction", link);   // Android: opened on tap
         }
+        if (alert.level() == Alert.Level.PROBLEM && alert.key().startsWith("leak:")) {
+            // A leak can't wait: delivered at once even while the phone is idle (Android), and through Focus (iPhone).
+            data.put("priority", "high");
+            data.put("ttl", 0);
+            data.put("push", Map.of("interruption-level", "time-sensitive"));
+        }
         Map<String, Object> body = Map.of("title", TITLE, "message", alert.message(), "data", data);
 
         for (String service : services) {

@@ -189,7 +189,9 @@ public class ControlService {
         List<String> options = asList(attrs.get("options")).stream().map(String::valueOf).toList();
         boolean cycle = "select".equals(domain) && !options.isEmpty() && CYCLE_OPTIONS.containsAll(options);
         String kind = cycle ? "cycle" : domain;
-        String label = !part.isEmpty() ? capitalize(part) : (cycle ? "Cycle" : capitalize(domain));
+        // A switch that is the whole device (a smart plug) turns its power on and off: "Power turned on".
+        String label = !part.isEmpty() ? capitalize(part)
+                : cycle ? "Cycle" : "switch".equals(domain) ? "Power" : capitalize(domain);
 
         String note = null;
         if (cycle) {

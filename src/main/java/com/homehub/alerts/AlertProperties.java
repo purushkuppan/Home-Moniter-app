@@ -33,6 +33,8 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * @param rainCheck   local time of the daily rain check, normally 07:00
  * @param lowBattery  a low-battery warning when a device's battery is at or below this percentage (any device with a
  *                    "battery" reading); empty: no battery warnings
+ * @param leak        per leak sensor (dashboard name): the message when it reads wet, e.g. "Water leak in the kitchen".
+ *                    Every leak sensor is watched; one not listed is reported as "Water leak: &lt;name&gt;".
  */
 @ConfigurationProperties("homehub.alerts")
 public record AlertProperties(
@@ -48,9 +50,11 @@ public record AlertProperties(
         @DefaultValue("19:00") LocalTime freezeCheck,
         Double rainFrom,
         @DefaultValue("07:00") LocalTime rainCheck,
-        Double lowBattery) {
+        Double lowBattery,
+        Map<String, String> leak) {
 
     public AlertProperties {
+        leak = leak == null ? Map.of() : Map.copyOf(leak);
         offline = offline == null ? Map.of() : Map.copyOf(offline);
         if (connectionLostAfter == null) connectionLostAfter = Duration.ofMinutes(10);
         if (freezeCheck == null) freezeCheck = LocalTime.of(19, 0);

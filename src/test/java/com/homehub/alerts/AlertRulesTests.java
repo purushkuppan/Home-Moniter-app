@@ -23,7 +23,7 @@ class AlertRulesTests {
             List.of("Washer", "Dryer"),
             Map.of("Refrigerator", Duration.ofMinutes(30)),
             Duration.ofMinutes(10),
-            null, null, null, null, 20.0);
+            null, null, null, null, 20.0, Map.of("Kitchen leak sensor", "Water leak in the kitchen"));
 
     private final AlertRules rules = new AlertRules(SETTINGS);
     private long nextId = 1;
@@ -306,9 +306,43 @@ class AlertRulesTests {
     @Test
     void noBatteryWarningsWithoutALimit() {
         AlertRules off = new AlertRules(new AlertProperties(List.of(), "", Map.of(), Map.of(), null, List.of(), Map.of(),
-                null, null, null, null, null, null));
+                null, null, null, null, null, null, null));
         assertThat(off.onEvent(event("Leak sensor", "battery", "5 %", sec(0)))).isEmpty();
         assertThat(off.active()).isEmpty();
+    }
+
+    // ---------------------------------------------------------------- water leak (#36)
+
+    @Test
+    void aWaterLeakIsReportedAtOnceAndClearedWhenDry() {
+        assertThat(rules.onEvent(event("Kitchen leak sensor", "leak", "dry", sec(0)))).isEmpty();
+        assertThat(rules.onEvent(event("Kitchen leak sensor", "leak", "wet", sec(60))))
+                .extracting(Alert::key, Alert::level, Alert::device, Alert::message)
+                .containsExactly(tuple("leak:kitchen leak sensor", Level.PROBLEM, "Kitchen leak sensor", "Water leak in the kitchen"));
+        assertThat(rules.onEvent(event("Kitchen leak sensor", "leak", "unavailable", sec(90)))).as("still a leak").isEmpty();
+        assertThat(rules.onEvent(event("Kitchen leak sensor", "leak", "wet", sec(120)))).as("reported once").isEmpty();
+        assertThat(rules.active()).extracting(Alert::message).containsExactly("Water leak in the kitchen");
+
+        assertThat(rules.onEvent(event("Kitchen leak sensor", "leak", "dry", Duration.ofMinutes(10))))
+                .extracting(Alert::level, Alert::message)
+                .containsExactly(tuple(Level.CLEARED, "Kitchen leak sensor is dry again."));
+        assertThat(rules.active()).isEmpty();
+    }
+
+    @Test
+    void everyLeakSensorIsWatchedEvenWithoutAMessage() {
+        assertThat(rules.onEvent(event("Laundry/Leak sensor", "leak", "wet", sec(0)))).extracting(Alert::message)
+                .containsExactly("Water leak: Leak sensor");
+    }
+
+    @Test
+    void afterARestartDuringALeakItIsStillActiveButNotReportedTwice() {
+        rules.seed(List.of(event("Kitchen leak sensor", "leak", "wet", sec(0)),
+                event("Kitchen leak sensor", "alert", "Water leak in the kitchen", sec(0))));
+
+        assertThat(rules.active()).extracting(Alert::message).containsExactly("Water leak in the kitchen");
+        assertThat(rules.onEvent(event("Kitchen leak sensor", "leak", "wet", sec(60)))).isEmpty();
+        assertThat(rules.check(T0.plus(Duration.ofHours(1)))).isEmpty();
     }
 
     @Test

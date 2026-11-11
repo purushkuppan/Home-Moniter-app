@@ -26,6 +26,8 @@ import java.util.regex.Pattern;
  *   <li>A battery at or below {@code lowBattery} percent (or a battery sensor that says "on" = low), right away, and
  *       "fine again" once it is a few points above the limit (a new battery), so a reading that wobbles around the
  *       limit is reported once.</li>
+ *   <li>A leak sensor that reads "wet", right away (with its message from {@code leak}, e.g. "Water leak in the
+ *       kitchen"), and "dry again" afterwards.</li>
  *   <li>A device whose readings are <em>all</em> "unavailable" for longer than its limit, and "back online" afterwards.
  *       A quiet device is not offline: readings are only stored when they change.</li>
  *   <li>Home Assistant unreachable for longer than {@code connectionLostAfter}, and "back now" afterwards.</li>
@@ -52,6 +54,7 @@ final class AlertRules {
     private final Map<String, Duration> offlineLimits = new HashMap<>();   // by main device: "refrigerator"
     private final Duration connectionLostAfter;
     private final Double lowBattery;   // null: no battery warnings
+    private final Map<String, String> leakMessages = new HashMap<>();   // by leak sensor
 
     /** A door that is open, or a reading that is too warm: since when, and whether the alert has gone out. */
     private static final class Watch {
@@ -74,6 +77,7 @@ final class AlertRules {
     private final Map<String, Watch> offline = new LinkedHashMap<>();
     private Watch connectionLost;   // null while Home Assistant is reachable
     private final Map<String, Watch> lowBatteries = new LinkedHashMap<>();   // reported at once, so message is always set
+    private final Map<String, Watch> leaks = new LinkedHashMap<>();          // reported at once, so message is always set
 
     AlertRules(AlertProperties properties) {
         properties.doorOpen().forEach((device, limit) -> doorLimits.put(key(device), limit));
@@ -83,6 +87,7 @@ final class AlertRules {
         properties.offline().forEach((device, limit) -> offlineLimits.put(key(device), limit));
         this.connectionLostAfter = properties.connectionLostAfter();
         this.lowBattery = properties.lowBattery();
+        properties.leak().forEach((device, message) -> leakMessages.put(key(device), message.trim()));
     }
 
     /**
@@ -201,6 +206,23 @@ final class AlertRules {
                 }
                 // "unavailable", or between the limit and the margin: no change
             }
+            case "leak" -> {
+                if (value.equals("wet") && !leaks.containsKey(device)) {
+                    Watch w = new Watch(e.device(), time);
+                    String message = leakMessages.get(device);
+                    w.message = message == null || message.isEmpty() ? "Water leak: " + name(e.device()) : message;
+                    leaks.put(device, w);
+                    return List.of(new Alert("leak:" + device, Level.PROBLEM, e.device(), w.message, time));
+                }
+                if (value.equals("dry")) {
+                    Watch w = leaks.remove(device);
+                    if (w != null) {
+                        return List.of(new Alert("leak:" + device, Level.CLEARED, w.device,
+                                name(w.device) + " is dry again.", time));
+                    }
+                }
+                // "unavailable" says nothing about water: keep the alert until the sensor reads dry
+            }
             default -> { }
         }
         return List.of();
@@ -267,6 +289,7 @@ final class AlertRules {
         });
         lowBatteries.forEach((device, w) ->
                 active.add(new Alert("battery:" + device, Level.PROBLEM, w.device, w.message, w.since)));
+        leaks.forEach((device, w) -> active.add(new Alert("leak:" + device, Level.PROBLEM, w.device, w.message, w.since)));
         if (connectionLost != null && connectionLost.message != null) {
             active.add(new Alert(Alert.CONNECTION_KEY, Level.PROBLEM, HOME_ASSISTANT, connectionLost.message,
                     connectionLost.since));

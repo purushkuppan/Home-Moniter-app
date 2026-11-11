@@ -28,7 +28,7 @@ class WeatherAlertsTests {
 
     private static AlertProperties settings(Double freezeBelow, Double rainFrom) {
         return new AlertProperties(List.of(), "", Map.of(), Map.of(), null, List.of(), Map.of(), null,
-                freezeBelow, LocalTime.of(19, 0), rainFrom, LocalTime.of(7, 0), null);
+                freezeBelow, LocalTime.of(19, 0), rainFrom, LocalTime.of(7, 0), null, null);
     }
 
     /** Daily forecast as met.no gives it through Home Assistant: one entry per day, stamped at local noon. */

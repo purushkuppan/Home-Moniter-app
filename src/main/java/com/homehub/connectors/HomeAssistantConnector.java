@@ -7,6 +7,7 @@ import static com.homehub.homeassistant.JsonValues.text;
 import com.homehub.events.Event;
 import com.homehub.events.EventRepository;
 import com.homehub.homeassistant.DeviceNames;
+import com.homehub.homeassistant.EntityNames;
 import com.homehub.homeassistant.EntityPatterns;
 import com.homehub.homeassistant.HomeAssistantProperties;
 import com.homehub.homeassistant.HomeAssistantStatus;
@@ -34,6 +35,8 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -70,6 +73,7 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
     private static final Logger log = LoggerFactory.getLogger(HomeAssistantConnector.class);
     private static final ParameterizedTypeReference<List<Map<String, Object>>> STATES = new ParameterizedTypeReference<>() {};
     private static final Set<String> CONTACT_CLASSES = Set.of("door", "window", "opening", "garage_door");
+    private static final Pattern LEADING_NUMBER = Pattern.compile("^\\s*(-?\\d+(?:\\.\\d+)?)");
     static final String DEFAULT_INCLUDE =
             "binary_sensor.*_door,sensor.*_temperature,sensor.*_machine_state,sensor.*_job_state,sensor.*_battery,lock.*";
     private static final int MAX_BACKOFF_SECONDS = 60;
@@ -98,6 +102,14 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
 
     private record Held(Event event, Instant since) { }
 
+    /** Dashboard names configured for single entities; they win over the Home Assistant device name. */
+    private final EntityNames names;
+    /**
+     * Power (watts) is only stored when it changed by at least this much, or went to or from zero, so a plug whose load
+     * wobbles by a watt or two doesn't fill the activity list.
+     */
+    static final double POWER_STEP_WATTS = 5;
+
     // Live updates
     private final Consumer<Event> liveSink;   // null = live updates off
     private final URI webSocketUri;
@@ -122,10 +134,11 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
             @Value("${homehub.connectors.homeassistant.live:true}") boolean live,
             @Value("${homehub.connectors.homeassistant.poll-while-live:5m}") Duration pollWhileLive,
             @Value("${homehub.connectors.homeassistant.unavailable-grace:2m}") Duration unavailableGrace,
+            EntityNames names,
             EventRepository repository,
             ApplicationEventPublisher publisher) {
         this(RestClient.builder(), properties, include, live ? repository::saveIfChanged : null, publisher::publishEvent,
-                pollWhileLive, Clock.systemUTC(), unavailableGrace);
+                pollWhileLive, Clock.systemUTC(), unavailableGrace, names);
     }
 
     /** Lets tests supply a builder bound to a mock server and their own sink for live events. */
@@ -151,6 +164,14 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
     HomeAssistantConnector(RestClient.Builder builder, HomeAssistantProperties properties, String include,
                            Consumer<Event> liveSink, Consumer<HomeAssistantStatus> statusSink,
                            Duration pollWhileLive, Clock clock, Duration unavailableGrace) {
+        this(builder, properties, include, liveSink, statusSink, pollWhileLive, clock, unavailableGrace, EntityNames.none());
+    }
+
+    /** Also lets tests set dashboard names for single entities. */
+    HomeAssistantConnector(RestClient.Builder builder, HomeAssistantProperties properties, String include,
+                           Consumer<Event> liveSink, Consumer<HomeAssistantStatus> statusSink,
+                           Duration pollWhileLive, Clock clock, Duration unavailableGrace, EntityNames names) {
+        this.names = names == null ? EntityNames.none() : names;
         this.configured = properties.isConfigured();
         this.include = EntityPatterns.parse(include);
         this.liveSink = liveSink;
@@ -239,7 +260,11 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
             return false;
         }
         if (held.remove(entityId) != null) log.debug("{} was briefly unavailable; not recorded", event.device());
-        return !event.value().equals(lastValues.put(entityId, event.value()));
+        String previous = lastValues.get(entityId);
+        if (event.value().equals(previous)) return false;
+        if ("power".equals(event.type()) && smallPowerChange(previous, event.value())) return false;   // keep the old reference
+        lastValues.put(entityId, event.value());
+        return true;
     }
 
     /** The held readings whose grace period is over: they are stored with the time they became unavailable. */
@@ -257,6 +282,20 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
 
     private static boolean isUnavailable(String value) {
         return "unavailable".equals(value) || "unknown".equals(value);
+    }
+
+    /** "12.4 W" after "10 W": too small to store. Anything that isn't two numbers is a real change. */
+    private static boolean smallPowerChange(String previous, String next) {
+        Double a = leadingNumber(previous), b = leadingNumber(next);
+        if (a == null || b == null) return false;
+        if ((a == 0) != (b == 0)) return false;   // switched on or off
+        return Math.abs(a - b) < POWER_STEP_WATTS;
+    }
+
+    private static Double leadingNumber(String value) {
+        if (value == null) return null;
+        Matcher m = LEADING_NUMBER.matcher(value);
+        return m.find() ? Double.valueOf(m.group(1)) : null;
     }
 
     /** Publishes a {@link HomeAssistantStatus} when reachability changed (and once at the start). */
@@ -460,6 +499,8 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
         String type = typeFor(domain, deviceClass, part);
         part = stripWords(part, deviceClass, type);   // "Fridge door" (contact) -> "Fridge"; "Machine state" -> ""
         String deviceLabel = part.isEmpty() ? device : device + "/" + part;
+        String configured = names.nameOf(entityId);   // e.g. "Back door" instead of "Backdoor openclose"
+        if (configured != null) deviceLabel = configured;
 
         return new Event(null, deviceLabel, type, valueFor(state, domain, deviceClass, attrs), time);
     }
@@ -467,7 +508,11 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
     private static String typeFor(String domain, String deviceClass, String part) {
         if (CONTACT_CLASSES.contains(deviceClass)) return "contact";
         if ("temperature".equals(deviceClass)) return "temperature";
+        if ("moisture".equals(deviceClass)) return "leak";   // water leak sensors: wet / dry
+        if ("power".equals(deviceClass)) return "power";     // watts, e.g. a smart plug's load
+        if ("battery".equals(deviceClass)) return "battery"; // "Battery level" (Z-Wave) as well as "Battery"
         if ("lock".equals(domain)) return "lock";
+        if ("switch".equals(domain)) return "switch";        // on / off, e.g. a smart plug
         String camel = toCamel(part);
         if (!camel.isEmpty()) return camel;
         return deviceClass.isEmpty() ? domain : deviceClass;
@@ -478,6 +523,10 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
         if ("binary_sensor".equals(domain) && CONTACT_CLASSES.contains(deviceClass)) {
             if ("on".equals(value)) return "open";
             if ("off".equals(value)) return "closed";
+        }
+        if ("binary_sensor".equals(domain) && "moisture".equals(deviceClass)) {
+            if ("on".equals(value)) return "wet";
+            if ("off".equals(value)) return "dry";
         }
         String unit = text(attrs.get("unit_of_measurement")).replace("°", "").trim();
         return unit.isEmpty() || "unavailable".equals(value) || "unknown".equals(value) ? value : value + " " + unit;
