@@ -18,12 +18,18 @@ fails() { ! "$@"; }
 archives() { find "$1" -maxdepth 1 -name 'kudil-backup-*.tar.gz' -printf '%f\n' | sort | tr '\n' ' '; }
 count() { sqlite3 -batch -init /dev/null "$1" "SELECT count(*) FROM events;"; }
 
-mkdir -p "$T/data" "$T/ha/.storage" "$T/ha/.cache" "$T/out" "$T/usb"
+mkdir -p "$T/data" "$T/ha/.storage" "$T/ha/.cache" "$T/out" "$T/usb" "$T/zw/logs" "$T/zw/sessions" "$T/zw/c4.jsonl.lock"
 echo '{"data":{"elevation":190}}' > "$T/ha/.storage/core.config"
 echo 'default_config:' > "$T/ha/configuration.yaml"
 echo 'log line' > "$T/ha/home-assistant.log"
 echo 'cache' > "$T/ha/.cache/blob"
 sqlite3 "$T/ha/home-assistant_v2.db" "PRAGMA journal_mode=WAL; CREATE TABLE states(id INTEGER); INSERT INTO states VALUES (1);" >/dev/null
+# Z-Wave JS UI's store: settings (with the security keys), nodes, caches; logs, lock folders and sessions.
+echo '{"zwave":{"securityKeys":{"S2_Authenticated":"TEST-KEY"}}}' > "$T/zw/settings.json"
+echo '[{"id":2,"name":"Indoor Smart Plug"}]' > "$T/zw/nodes.json"
+echo '{"k":"v"}' > "$T/zw/c4.jsonl"
+echo 'log line' > "$T/zw/logs/z-ui.log"
+echo 'session' > "$T/zw/sessions/s1"
 
 # Kudil's database with 500 rows that are still only in the -wal file, held there by an open connection,
 # like the running app holds them.
@@ -44,7 +50,7 @@ for _ in $(seq 50); do [[ -f $T/ready ]] && break; sleep 0.1; done
 
 run() {   # runs backup.sh against the test folders; extra NAME=value settings as arguments
     env HOMEHUB_DATA="$T/data" DB_USER="$(id -un)" HA_CONFIG="$T/ha" BACKUP_DIR="$T/out" \
-        STATUS_FILE="$T/status/last-success" KEEP=3 "$@" bash "$BACKUP" > "$T/log" 2>&1
+        ZWAVE_DIR="$T/zw" STATUS_FILE="$T/status/last-success" KEEP=3 "$@" bash "$BACKUP" > "$T/log" 2>&1
 }
 
 # 1. A backup of live databases.
@@ -58,6 +64,10 @@ check "...which a plain copy of the file would miss" \
 check "Home Assistant settings are in the backup" grep -q elevation "$T/restore/homeassistant/.storage/core.config"
 check "Home Assistant history database is in the backup" test -f "$T/restore/homeassistant/home-assistant_v2.db"
 check "logs and cache are left out" test ! -e "$T/restore/homeassistant/home-assistant.log" -a ! -e "$T/restore/homeassistant/.cache"
+check "Z-Wave security keys are in the backup" grep -q TEST-KEY "$T/restore/zwave-js-ui/settings.json"
+check "Z-Wave nodes and caches are in the backup" test -f "$T/restore/zwave-js-ui/nodes.json" -a -f "$T/restore/zwave-js-ui/c4.jsonl"
+check "Z-Wave logs, locks and sessions are left out" test ! -e "$T/restore/zwave-js-ui/logs" -a ! -e "$T/restore/zwave-js-ui/c4.jsonl.lock" \
+    -a ! -e "$T/restore/zwave-js-ui/sessions"
 check "no SQLite side files in the archive" test -z "$(find "$T/restore" -name '*-wal' -o -name '*-shm')"
 check "status file records the success" test -s "$T/status/last-success"
 check "status file is readable by Kudil" test "$(stat -c %a "$T/status/last-success")" = 644
@@ -75,12 +85,21 @@ check "keeps the 3 newest archives on the USB folder too" \
 check "the USB copy is complete" cmp -s "$T/out/$today" "$T/usb/$today"
 check "other files are left alone" test -f "$T/out/notes.txt"
 
+# A hub without a Z-Wave stick is backed up without it.
+check "a hub without Z-Wave is backed up" run ZWAVE_DIR="$T/no-zwave"
+check "...and the archive has no Z-Wave folder" fails grep -q "zwave-js-ui" < <(tar -tzf "$T/out/$today")
+check "with Z-Wave again" run
+
 # 3. Failures: nothing is replaced or removed, and the status file isn't updated.
 before=$(cat "$T/status/last-success")
 kept=$(ls "$T/out")
 check "a missing USB disk fails the backup" fails run COPY_TO="$T/not-mounted"
 check "...and says why" grep -q "not mounted" "$T/log"
 check "a bad KEEP value fails the backup" fails run KEEP=0
+mv "$T/zw/settings.json" "$T/zw-settings.json"
+check "a Z-Wave folder without its settings fails the backup" fails run
+check "...and says why" grep -q "no settings.json" "$T/log"
+mv "$T/zw-settings.json" "$T/zw/settings.json"
 kill "$writer" 2>/dev/null || true
 wait "$writer" 2>/dev/null || true
 writer=

@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+# Tests deploy/setup-zwave.sh with stand-in docker and curl that only record what they are asked to do.
+# No root, no Docker needed.
+#   bash deploy/test/zwave-setup-test.sh
+set -euo pipefail
+
+HERE="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT="$HERE/../setup-zwave.sh"
+T=$(mktemp -d)
+trap 'rm -rf "$T"' EXIT
+
+failures=0
+check() {   # check "description" command...
+    if "${@:2}"; then echo "ok   - $1"; else echo "FAIL - $1"; failures=$((failures + 1)); fi
+}
+fails() { ! "$@"; }
+
+STICK=/dev/serial/by-id/usb-Zooz_800_Z-Wave_Stick_533D004242-if00
+mkdir "$T/bin"
+# docker: each container is a folder in $FAKE/containers with its image and ports; every call goes to $FAKE/calls.
+cat > "$T/bin/docker" <<'EOF'
+#!/usr/bin/env bash
+echo "docker $*" >> "$FAKE/calls"
+c="$FAKE/containers"
+case $1 in
+    inspect)
+        [[ -d $c/$2 ]] || exit 1
+        case $* in
+            *NetworkMode*) echo "$FAKE_SETTINGS" ;;
+            *PortBindings*) cat "$c/$2/ports" ;;
+            *Config.Image*) cat "$c/$2/image" ;;
+            *PathOnHost*) echo "$FAKE_STICK:/dev/zwave" ;;
+            *Config.Env*) printf 'TZ=America/Chicago\nNODE_ENV=production\n' ;;
+        esac ;;
+    stop|update|start|logs) [[ -d $c/${!#} ]] ;;
+    rename) [[ -d $c/$2 ]] && mv "$c/$2" "$c/$3" ;;
+    rm) [[ -d $c/${!#} ]] && rm -r "${c:?}/${!#}" ;;
+    run)
+        [[ -z ${FAKE_RUN_FAIL:-} ]] || exit 125
+        name=$(sed -n 's/.*--name \([^ ]*\).*/\1/p' <<< "$*")
+        mkdir "$c/$name" && echo "${!#}" > "$c/$name/image"
+        echo "3000/tcp=127.0.0.1 8091/tcp=127.0.0.1 " > "$c/$name/ports" ;;
+esac
+EOF
+# curl: the UI and the Z-Wave server answer when FAKE_UP is set; /api/settings answers FAKE_SETTINGS_CODE.
+cat > "$T/bin/curl" <<'EOF'
+#!/usr/bin/env bash
+echo "curl $*" >> "$FAKE/calls"
+case $* in
+    */api/settings*) printf '%s' "${FAKE_SETTINGS_CODE:-401}" ;;
+    *) [[ -n ${FAKE_UP:-} ]] ;;
+esac
+EOF
+chmod +x "$T/bin/"*
+
+run() {   # run [NAME=value...]: a hub whose zwave-js-ui publishes 8091 on every address
+    rm -rf "$T/fake" "$T/store" && mkdir -p "$T/fake/containers/zwave-js-ui" "$T/store"
+    echo "zwavejs/zwave-js-ui:latest" > "$T/fake/containers/zwave-js-ui/image"
+    echo "3000/tcp=127.0.0.1 8091/tcp= " > "$T/fake/containers/zwave-js-ui/ports"
+    echo '{}' > "$T/store/settings.json" && chmod 0755 "$T/store"
+    : > "$T/fake/calls"
+    env PATH="$T/bin:$PATH" FAKE="$T/fake" ZWAVE_SETUP_TEST=1 ZWAVE_DIR="$T/store" FAKE_STICK="$STICK" \
+        FAKE_SETTINGS="bridge unless-stopped false [\"$T/store:/usr/src/app/store\"] 1" \
+        ZWAVE_WAIT_SECONDS=0 ZWAVE_POLL_SECONDS=0 FAKE_UP=1 "$@" bash "$SCRIPT" > "$T/log" 2>&1
+}
+called() { grep -q -F -- "$1" "$T/fake/calls"; }
+ports() { cat "$T/fake/containers/zwave-js-ui/ports" 2>/dev/null; }
+untouched() { ! called "docker stop" && ! called "docker run" && test "$(ports)" = "3000/tcp=127.0.0.1 8091/tcp= "; }
+
+# 1. Locking down a container that is open to the network.
+check "locks it down" run
+check "recreates it with both ports on the hub only, the same image, stick, folder and time zone" grep -q -F -x \
+    "docker run -d --name zwave-js-ui --restart=unless-stopped --pull=never -e TZ=America/Chicago --device $STICK:/dev/zwave -v $T/store:/usr/src/app/store -p 127.0.0.1:3000:3000 -p 127.0.0.1:8091:8091 zwavejs/zwave-js-ui:latest" \
+    "$T/fake/calls"
+check "gives it time to save its caches" called "docker stop -t 30 zwave-js-ui"
+check "the old container won't start on a reboot while set aside" called "docker update --restart=no zwave-js-ui-previous"
+check "the old container is removed once the new one answers" test ! -e "$T/fake/containers/zwave-js-ui-previous"
+check "the keys folder is root only" test "$(stat -c %a "$T/store")" = 700
+check "says how to reach the UI through SSH" grep -q "ssh -L 8091:127.0.0.1:8091" "$T/log"
+check "checks the login" called "curl -s -o /dev/null --max-time 5 -w %{http_code} http://127.0.0.1:8091/api/settings"
+check "...which is on" grep -q "asks for a login" "$T/log"
+
+# 2. Running it again changes nothing.
+check "a locked-down container is left running" run bash -c \
+    'echo "3000/tcp=127.0.0.1 8091/tcp=127.0.0.1 " > "$FAKE/containers/zwave-js-ui/ports"; exec bash "$0"' "$SCRIPT"
+check "...not recreated" fails called "docker run"
+check "...not stopped" fails called "docker stop"
+
+# 3. No login yet: done, but says what to do and exits 2.
+set +e; run FAKE_SETTINGS_CODE=200; code=$?; set -e
+check "without a login it exits 2" test "$code" = 2
+check "...and says how to turn it on" grep -q "turn on 'Auth'" "$T/log"
+check "...and to change the default password" grep -q "change the password" "$T/log"
+
+# 4. The new container doesn't answer: back to the old one.
+check "a container that doesn't come back fails" fails run FAKE_UP=
+check "...and the old container runs again" test "$(ports)" = "3000/tcp=127.0.0.1 8091/tcp= "
+check "...and starts on a reboot again" called "docker update --restart=unless-stopped zwave-js-ui"
+check "...and is started" called "docker start zwave-js-ui"
+check "...and the broken one is gone" test ! -e "$T/fake/containers/zwave-js-ui-previous"
+check "a container that can't be created goes back too" fails run FAKE_RUN_FAIL=1
+check "...and the old container runs again" test "$(ports)" = "3000/tcp=127.0.0.1 8091/tcp= "
+
+# 5. Nothing changes when the container isn't the one this script knows.
+check "other settings are left to change by hand" \
+    fails run FAKE_SETTINGS="host unless-stopped false [\"x:/usr/src/app/store\"] 1"
+check "...and nothing changed" untouched
+check "a different stick mapping is left alone" fails run FAKE_STICK=/dev/ttyUSB0
+check "...and nothing changed" untouched
+check "no container: stops" fails run FAKE_SETTINGS=x bash -c 'rm -r "$FAKE/containers/zwave-js-ui"; exec bash "$0"' "$SCRIPT"
+
+if [[ $EUID -ne 0 ]]; then
+    check "refuses to run without sudo" fails env PATH="$T/bin:$PATH" bash "$SCRIPT" 2>/dev/null
+fi
+
+echo
+if ((failures)); then echo "$failures check(s) failed"; exit 1; fi
+echo "All Z-Wave setup checks passed"

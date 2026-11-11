@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Nightly backup of Kudil's database and Home Assistant's configuration, as one archive:
+# Nightly backup of Kudil's database, Home Assistant's configuration and Z-Wave JS UI's network data and keys,
+# as one archive:
 #   /var/backups/homehub/kudil-backup-YYYY-MM-DD.tar.gz
 # Run as root by homehub-backup.timer (installed by setup-hub.sh); by hand: sudo systemctl start homehub-backup
 #
@@ -16,6 +17,7 @@ umask 077
 HOMEHUB_DATA=${HOMEHUB_DATA:-/opt/homehub/data}
 DB_USER=${DB_USER:-homehub}        # owns homehub.db; reads it, so SQLite's side files stay owned by it
 HA_CONFIG=${HA_CONFIG:-/opt/homeassistant}
+ZWAVE_DIR=${ZWAVE_DIR:-/opt/zwave-js-ui}   # optional: only on a hub with a Z-Wave stick
 BACKUP_DIR=${BACKUP_DIR:-/var/backups/homehub}
 STATUS_FILE=${STATUS_FILE:-/var/lib/homehub-backup/last-success}
 COPY_TO=${COPY_TO:-}
@@ -24,7 +26,7 @@ KEEP=${KEEP:-14}
 fail() { echo "Backup failed: $*" >&2; exit 1; }
 
 [[ $KEEP =~ ^[1-9][0-9]{0,3}$ ]] || fail "KEEP must be a number from 1 to 9999, not '$KEEP'"
-for dir in "$HOMEHUB_DATA" "$HA_CONFIG" "$BACKUP_DIR" ${COPY_TO:+"$COPY_TO"}; do
+for dir in "$HOMEHUB_DATA" "$HA_CONFIG" "$ZWAVE_DIR" "$BACKUP_DIR" ${COPY_TO:+"$COPY_TO"}; do
     # Paths end up inside SQLite dot-commands, so keep them plain.
     [[ $dir =~ ^/[A-Za-z0-9._/-]+$ ]] || fail "unexpected characters in path '$dir'"
 done
@@ -71,8 +73,19 @@ if [[ -f $HA_CONFIG/home-assistant_v2.db ]]; then
     check_db "$work/homeassistant/home-assistant_v2.db"
 fi
 
+# Z-Wave JS UI (#130): its settings hold the Z-Wave security keys, and with nodes.json and the *.jsonl caches they
+# let a new install take over the stick's network without re-pairing. Logs, lock folders and web sessions are left out.
+parts=(kudil homeassistant)
+if [[ -d $ZWAVE_DIR ]]; then
+    mkdir "$work/zwave-js-ui"
+    tar -C "$ZWAVE_DIR" -cf - --exclude='./logs' --exclude='./sessions' --exclude='*.lock' . \
+        | tar -C "$work/zwave-js-ui" -xf - || fail "can't copy $ZWAVE_DIR"
+    [[ -f $work/zwave-js-ui/settings.json ]] || fail "no settings.json in $ZWAVE_DIR"
+    parts+=(zwave-js-ui)
+fi
+
 name="kudil-backup-$(date +%F).tar.gz"
-tar -C "$work" -czf "$work/$name" kudil homeassistant || fail "can't write the archive"
+tar -C "$work" -czf "$work/$name" "${parts[@]}" || fail "can't write the archive"
 gzip -t "$work/$name" || fail "the archive is damaged"
 mv -f "$work/$name" "$BACKUP_DIR/$name"
 
