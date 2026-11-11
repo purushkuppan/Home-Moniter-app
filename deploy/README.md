@@ -38,6 +38,7 @@ cd ~/homehub-deploy
 sudo bash setup-hub.sh      # service, folders, credentials, sudo rule, firewall, nightly backup
 sudo bash setup-runner.sh   # GitHub runner for automatic deploys
 sudo bash setup-tailscale.sh   # optional: open Kudil away from home (see Remote access)
+sudo bash setup-updates.sh     # automatic security updates, restart at 04:00 when needed (see Updates)
 ```
 Re-run `setup-hub.sh` after any change to `install-release.sh`, `backup.sh` or the systemd units in git. The hub uses its
 own copy in `/opt/homehub/bin`, which the runner can't modify.
@@ -120,6 +121,37 @@ sudo cp -a /root/restore/homeassistant/. /opt/homeassistant/
 sudo docker start homeassistant
 ```
 Then `sudo rm -rf /root/restore`.
+
+## Updates
+### Ubuntu and Tailscale: automatic
+`setup-updates.sh` (run once: `cd ~/homehub-deploy && sudo bash setup-updates.sh`) lets `unattended-upgrades`
+install Ubuntu's security updates and Tailscale's updates every day (around 06:00), and remove old kernels. When an
+update needs a restart (a new kernel), the hub restarts at **04:00**, after the 03:00 backup. Kudil, Home Assistant and
+Tailscale start again on their own. Kudil itself is updated by merging to `main` (above).
+```bash
+cat /var/log/unattended-upgrades/unattended-upgrades.log   # what was installed
+cat /var/run/reboot-required 2>/dev/null                    # a restart is waiting for 04:00
+```
+
+### Home Assistant: once a month, by hand
+Home Assistant runs a fixed version (`docker inspect homeassistant --format '{{.Config.Image}}'`), so it changes
+only when you update it. A new version comes out on the first Wednesday of each month, and fixes (`.1`, `.2`) follow
+in the next days. Update about a week in, to the newest fix:
+1. Read the release notes on the [Home Assistant blog](https://www.home-assistant.io/blog/categories/release-notes/),
+   especially **Backward-incompatible changes**, for what Kudil uses: **SmartThings**, **Mobile App**
+   (notifications), **Met.no** (weather), **Sun**. Skip a version if one of them has an open problem.
+2. Copy the latest scripts and run the update. The version is the number from
+   [the releases page](https://github.com/home-assistant/core/releases), e.g. `2026.12.1`:
+   ```powershell
+   scp deploy/update-home-assistant.sh purush@192.168.5.251:~/homehub-deploy/
+   ssh -t purush@192.168.5.251 "sudo bash ~/homehub-deploy/update-home-assistant.sh 2026.12.1"
+   ```
+   It backs up first, keeps the old container until the new one answers, and goes back to it if the new one
+   doesn't start within 10 minutes. Nothing changes if the backup or the download fails.
+3. Check: open the fridge door and see it in Kudil within seconds; in Home Assistant, **Settings → Repairs** is empty
+   and **Settings → Devices & services** shows no errors.
+4. If it went back, or something is wrong: Home Assistant may already have changed its database, so restore it from
+   today's backup (Restoring, above).
 
 ## Remote access (Tailscale)
 Kudil has no login yet, so it is never opened to the internet. Away from home it is reached through a private
