@@ -71,7 +71,7 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
     private static final ParameterizedTypeReference<List<Map<String, Object>>> STATES = new ParameterizedTypeReference<>() {};
     private static final Set<String> CONTACT_CLASSES = Set.of("door", "window", "opening", "garage_door");
     static final String DEFAULT_INCLUDE =
-            "binary_sensor.*_door,sensor.*_temperature,sensor.*_machine_state,sensor.*_job_state,lock.*";
+            "binary_sensor.*_door,sensor.*_temperature,sensor.*_machine_state,sensor.*_job_state,sensor.*_battery,lock.*";
     private static final int MAX_BACKOFF_SECONDS = 60;
     private static final int AUTH_FAILED_RETRY_SECONDS = 300;
 

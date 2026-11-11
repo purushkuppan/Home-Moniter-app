@@ -27,7 +27,7 @@ class AlertNotifierTests {
 
     private static AlertProperties settings(List<String> notify, String link) {
         return new AlertProperties(notify, link, Map.of(), Map.of(), Duration.ofMinutes(15), List.of(), Map.of(), null,
-                null, null, null, null);
+                null, null, null, null, null);
     }
 
     @Test

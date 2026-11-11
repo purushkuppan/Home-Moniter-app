@@ -163,6 +163,26 @@ class HomeAssistantConnectorTests {
     }
 
     @Test
+    void batteryLevelsAreReadByDefault() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        expectStates(server, """
+                [{"entity_id":"sensor.laundry_leak_sensor_battery","state":"15",
+                  "attributes":{"device_class":"battery","unit_of_measurement":"%","friendly_name":"Leak sensor Battery"}},
+                 {"entity_id":"sensor.oneplus_13_battery_level","state":"80",
+                  "attributes":{"device_class":"battery","unit_of_measurement":"%","friendly_name":"OnePlus 13 Battery level"}}]
+                """);
+        server.expect(requestTo(URL + "/api/template"))
+                .andRespond(withSuccess("sensor.laundry_leak_sensor_battery|Leak sensor\n", MediaType.TEXT_PLAIN));
+
+        List<Event> events = new HomeAssistantConnector(builder, PROPS, HomeAssistantConnector.DEFAULT_INCLUDE, null).poll();
+
+        // The phone's own battery level (Companion app) is not a home device: not included.
+        assertThat(events).extracting(Event::device, Event::type, Event::value)
+                .containsExactly(tuple("Leak sensor", "battery", "15 %"));
+    }
+
+    @Test
     void unauthorizedReturnsNothing() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();

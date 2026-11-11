@@ -23,7 +23,7 @@ class AlertRulesTests {
             List.of("Washer", "Dryer"),
             Map.of("Refrigerator", Duration.ofMinutes(30)),
             Duration.ofMinutes(10),
-            null, null, null, null);
+            null, null, null, null, 20.0);
 
     private final AlertRules rules = new AlertRules(SETTINGS);
     private long nextId = 1;
@@ -259,6 +259,56 @@ class AlertRulesTests {
     void otherAlertsReachPhones() {
         rules.onEvent(event("Refrigerator/Fridge", "contact", "open", sec(0)));
         assertThat(rules.check(T0.plus(sec(61)))).allMatch(Alert::reachesPhone);
+    }
+
+    // ---------------------------------------------------------------- low battery (#15)
+
+    @Test
+    void aLowBatteryIsReportedAtOnceAndOnlyOnce() {
+        assertThat(rules.onEvent(event("Leak sensor", "battery", "35 %", sec(0)))).isEmpty();
+        assertThat(rules.onEvent(event("Leak sensor", "battery", "20 %", sec(60))))
+                .extracting(Alert::key, Alert::level, Alert::message)
+                .containsExactly(tuple("battery:leak sensor", Level.PROBLEM, "Leak sensor battery is low: 20%. Replace it soon."));
+        assertThat(rules.onEvent(event("Leak sensor", "battery", "12 %", sec(120)))).as("not again").isEmpty();
+        assertThat(rules.onEvent(event("Leak sensor", "battery", "unavailable", sec(130)))).isEmpty();
+        assertThat(rules.active()).extracting(Alert::message).containsExactly("Leak sensor battery is low: 20%. Replace it soon.");
+    }
+
+    @Test
+    void aBatteryWobblingAroundTheLimitIsNotFineAgainUntilReplaced() {
+        rules.onEvent(event("Leak sensor", "battery", "19", sec(0)));
+        assertThat(rules.onEvent(event("Leak sensor", "battery", "22", sec(60)))).as("within the margin").isEmpty();
+        assertThat(rules.onEvent(event("Leak sensor", "battery", "18", sec(120)))).as("still the same warning").isEmpty();
+        assertThat(rules.onEvent(event("Leak sensor", "battery", "100 %", sec(180))))
+                .extracting(Alert::level, Alert::message)
+                .containsExactly(tuple(Level.CLEARED, "Leak sensor battery is fine again: 100%."));
+        assertThat(rules.active()).isEmpty();
+    }
+
+    @Test
+    void aBatterySensorThatOnlySaysLowWorksToo() {
+        assertThat(rules.onEvent(event("Garage/Door sensor", "battery", "on", sec(0)))).extracting(Alert::message)
+                .containsExactly("Door sensor battery is low. Replace it soon.");
+        assertThat(rules.onEvent(event("Garage/Door sensor", "battery", "off", sec(60)))).extracting(Alert::message)
+                .containsExactly("Door sensor battery is fine again.");
+    }
+
+    @Test
+    void afterARestartALowBatteryIsStillActiveButNotReportedTwice() {
+        rules.seed(List.of(event("Leak sensor", "battery", "15 %", sec(0)),
+                event("Leak sensor", "alert", "Leak sensor battery is low: 15%. Replace it soon.", sec(0))));
+
+        assertThat(rules.active()).extracting(Alert::message).containsExactly("Leak sensor battery is low: 15%. Replace it soon.");
+        assertThat(rules.onEvent(event("Leak sensor", "battery", "14 %", sec(60)))).isEmpty();
+        assertThat(rules.check(T0.plus(Duration.ofHours(1)))).isEmpty();
+    }
+
+    @Test
+    void noBatteryWarningsWithoutALimit() {
+        AlertRules off = new AlertRules(new AlertProperties(List.of(), "", Map.of(), Map.of(), null, List.of(), Map.of(),
+                null, null, null, null, null, null));
+        assertThat(off.onEvent(event("Leak sensor", "battery", "5 %", sec(0)))).isEmpty();
+        assertThat(off.active()).isEmpty();
     }
 
     @Test
