@@ -889,12 +889,13 @@ function readingKey(e) {
 /** The last value of every reading, grouped by appliance: from /api/events/latest plus live updates. */
 function appliances() {
   const devices = new Map();
+  const lastRuns = lastFinishedRuns();
   for (const e of [...current].sort((a, b) => b.id - a.id)) {
     if (NOT_READINGS.has(e.type)) continue;   // commands and alerts are shown in the activity list instead
     const { main, part } = splitDevice(e.device);
     const time = new Date(e.time);
     const id = main.toLowerCase();
-    if (!devices.has(id)) devices.set(id, { name: main, readings: new Map(), updated: time });
+    if (!devices.has(id)) devices.set(id, { name: main, readings: new Map(), updated: time, lastRun: lastRuns.get(id) || null });
     const device = devices.get(id);
     if (time > device.updated) device.updated = time;
     const key = ((part ? part + ' ' : '') + e.type).toLowerCase();
@@ -906,6 +907,21 @@ function appliances() {
     }
   }
   return [...devices.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * When each washer or dryer last finished a cycle, by lowercase device name. Comes from the "Washer finished" notice
+ * the server stores at the end of a cycle (AlertRules), so a Kudil restart or a SmartThings reconnect doesn't move it.
+ */
+function lastFinishedRuns() {
+  const runs = new Map();
+  for (const e of current) {
+    if (e.type !== 'notice' || !/\bfinished$/i.test((e.value || '').trim())) continue;
+    const id = splitDevice(e.device).main.toLowerCase();
+    const time = new Date(e.time);
+    if (!runs.has(id) || time > runs.get(id)) runs.set(id, time);
+  }
+  return runs;
 }
 
 const offlineAlert = name => activeAlerts.find(a => a.key.startsWith('offline:') && a.device.toLowerCase() === name.toLowerCase());
@@ -930,7 +946,9 @@ function applianceSummary(d) {
     const jobText = job && !IDLE_STATES.includes(lower(job.value)) ? formatValue(job.type, job.value) : '';
     if (state === 'pause' || state === 'paused') return ['Paused', 'warn', jobText || 'Since ' + sinceText(machine.time)];
     if (!IDLE_STATES.includes(state)) return ['Running', 'info', jobText || formatValue(machine.type, machine.value)];
-    return ['Idle', 'idle', 'Since ' + sinceText(machine.time)];
+    // "Since 12:30 AM" was only when the reading was last re-reported (a restart or a reconnect), which says
+    // nothing useful; when the machine last finished a load does.
+    return ['Idle', 'idle', d.lastRun ? 'Last run finished ' + sinceText(d.lastRun) : 'No finished run yet'];
   }
   if (doors.length) return ['Closed', 'ok', temps.join(' · ') || 'Updated ' + timeAgo(d.updated)];
   const first = readings[0];
