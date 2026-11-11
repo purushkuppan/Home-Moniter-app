@@ -84,7 +84,7 @@
 			<plugin>
 				<groupId>org.codehaus.mojo</groupId>
 				<artifactId>license-maven-plugin</artifactId>
-				<version>2.7.1</version>
+				<version>2.8.0</version>
 				<executions>
 					<execution>
 						<id>check-third-party-licenses</id>
@@ -99,7 +99,7 @@
 							<failOnBlacklist>true</failOnBlacklist>
 							<!-- Allow-list: any license not listed here fails the build (GPL and AGPL are never on
 							     it), unless the same dependency also offers an allowed license: dual licensing such
-							     as "EPL-2.0 OR GPL-2.0" passes. No excludedLicenses on purpose: in 2.7.1 it drops the
+							     as "EPL-2.0 OR GPL-2.0" passes. No excludedLicenses on purpose: in 2.8.0 it drops the
 							     GPL option of a dual-licensed dependency from the report. -->
 							<includedLicenses>
 								<includedLicense>Apache-2.0</includedLicense>
