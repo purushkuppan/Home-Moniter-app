@@ -109,7 +109,7 @@ hub=open
 
 # 3. No login yet: done, but says what to do and exits 2.
 auth=false
-set +e; run; code=$?; set -e
+set +e; run FAKE_UI_UP=1 FAKE_SERVER_UP=1; code=$?; set -e   # everything up, only the login is off
 check "without a login it exits 2" test "$code" = 2
 check "...and says how to turn it on" grep -q "turn on 'Auth'" "$T/log"
 check "...and to change the default password" grep -q "change the password" "$T/log"
