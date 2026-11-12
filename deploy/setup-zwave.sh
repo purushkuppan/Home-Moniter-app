@@ -73,8 +73,10 @@ if [[ $recreated == yes ]]; then
         -e TZ="${tz:-UTC}" --device "$stick" -v "$STORE:/usr/src/app/store" \
         -p 127.0.0.1:3000:3000 -p 127.0.0.1:8091:8091 "$image" >/dev/null || rollback
 
+    # Up = the web UI answers and the Z-Wave server takes connections. That server speaks WebSocket only: it accepts
+    # the connection but never answers a plain HTTP request, so it is checked with a bare TCP connect (#148).
     deadline=$((SECONDS + WAIT_SECONDS))
-    until curl -s -o /dev/null --max-time 5 http://127.0.0.1:8091/ && curl -s -o /dev/null --max-time 5 http://127.0.0.1:3000/; do
+    until curl -s -o /dev/null --max-time 5 http://127.0.0.1:8091/ && timeout 3 bash -c '</dev/tcp/127.0.0.1/3000' 2>/dev/null; do
         ((SECONDS < deadline)) || rollback
         sleep "$POLL_SECONDS"
     done
@@ -82,13 +84,13 @@ if [[ $recreated == yes ]]; then
     echo "    Back up. Home Assistant reconnects to the Z-Wave server on its own."
 fi
 
-# 3. The login. Asking for the settings without one must fail; the answer itself is thrown away unread.
-code=$(curl -s -o /dev/null --max-time 5 -w '%{http_code}' http://127.0.0.1:8091/api/settings || true)
+# 3. The login: Z-Wave JS UI asks for one when settings.gateway.authEnabled is true. Only that flag is looked for;
+#    nothing from the file (which holds the keys) is printed.
 echo
 echo "To open Z-Wave JS UI (for pairing), from the PC:"
 echo "    ssh -L 8091:127.0.0.1:8091 purush@$HUB"
 echo "then http://localhost:8091 in the PC's browser, while that SSH window stays open."
-if [[ $code == 200 ]]; then
+if ! grep -Eq '"authEnabled"[[:space:]]*:[[:space:]]*true' "$STORE/settings.json"; then
     echo
     echo "3/3 Z-Wave JS UI has no login yet. Through the SSH tunnel above: Settings > General > turn on 'Auth' > Save."
     echo "    Then sign in as admin / zwave and change the password at once (top right > Change password)."
