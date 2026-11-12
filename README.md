@@ -141,6 +141,22 @@ One-time phone setup, then check it with **Settings → Alerts → Send test** (
   missed while Kudil was restarting runs as soon as it is back, up to 3 hours late, and a restart never repeats
   one. Limits are in Home Assistant's units (°F and inches here; with °C and mm use e.g. `0` and `2`).
 
+## Devices
+
+Kudil reads Home Assistant's devices, rooms (areas) and entities over its live connection, at start and again a
+few seconds after anything changes there (#99). A device paired in Home Assistant shows up in Kudil by itself:
+**Settings → Devices**, and a "new devices to review" chip on the home screen.
+- Each device has a kind (leak sensor, door or window sensor, smart plug, lock, thermostat, appliance, phone,
+  other…), its room, maker and model, and what Kudil would record from it ("Water, Battery"). Never entity ids.
+- A **new** device records nothing and sends no alerts until someone **confirms** it with a name ("Laundry leak
+  sensor"; Kudil suggests room + kind). **Hide** a device to ignore it (the Z-Wave stick, a phone). Both need the PIN.
+- Kudil records what matters for the kind: water and battery for a leak sensor, on/off and watts for a plug; not
+  signal strength, firmware or settings.
+- Devices Kudil already recorded through `homehub.connectors.homeassistant.include` are confirmed automatically under
+  their Home Assistant names, so nothing changes for them. The include list still adds entities; a hidden device is
+  never recorded, include list or not.
+- A device removed from Home Assistant stays in the list (its history stays) and is no longer recorded.
+
 ## Weather
 
 The Status section starts with the weather: now (condition, temperature, humidity, wind) and today plus the

@@ -50,10 +50,12 @@ class DatabaseMigrationTests {
             assertThat(schemaObjects(jdbc)).containsExactly(
                     "index flyway_schema_history_s_idx",
                     "index idx_events_device_type",
+                    "table devices",
                     "table events",
                     "table flyway_schema_history");
             assertThat(jdbc.queryForList("SELECT version, type, success FROM flyway_schema_history"))
-                    .containsExactly(Map.of("version", "1", "type", "SQL", "success", 1));
+                    .containsExactly(Map.of("version", "1", "type", "SQL", "success", 1),
+                            Map.of("version", "2", "type", "SQL", "success", 1));   // V2: devices (#99)
 
             Event saved = ctx.getBean(EventRepository.class).add("Refrigerator/Fridge", "contact", "open");
             assertThat(saved.id()).isEqualTo(1);
@@ -86,7 +88,8 @@ class DatabaseMigrationTests {
             EventRepository repository = ctx.getBean(EventRepository.class);
 
             assertThat(jdbc.queryForList("SELECT version, type, success FROM flyway_schema_history"))
-                    .containsExactly(Map.of("version", "1", "type", "BASELINE", "success", 1));
+                    .containsExactly(Map.of("version", "1", "type", "BASELINE", "success", 1),
+                            Map.of("version", "2", "type", "SQL", "success", 1));   // then V2 runs on top
             assertThat(repository.latest(10)).extracting(Event::id, Event::device, Event::value).containsExactly(
                     tuple(3L, "Washer", "stop"),
                     tuple(2L, "Refrigerator/Fridge", "38 F"),
@@ -99,7 +102,7 @@ class DatabaseMigrationTests {
         // The next start finds the history table and has nothing to do.
         try (var ctx = start(db)) {
             JdbcTemplate jdbc = ctx.getBean(JdbcTemplate.class);
-            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM flyway_schema_history", Integer.class)).isEqualTo(1);
+            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM flyway_schema_history", Integer.class)).isEqualTo(2);
             assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM events", Integer.class)).isEqualTo(4);
         }
     }

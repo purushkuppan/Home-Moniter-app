@@ -220,6 +220,15 @@
   .option-label { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 14px; }
   .option-label svg.icon { width: 16px; height: 16px; }
   .setting-hint { margin: 10px 2px 0; color: var(--muted); font-size: 13px; }
+  /* Devices (#99): one row per device, what it is and where, and the household's choice */
+  .device-list { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 8px; }
+  .device-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--border);
+    border-radius: 14px; background: var(--surface); }
+  .device-row .device-text { display: grid; gap: 2px; min-width: 0; flex: 1; }
+  .device-row .device-name { font-weight: 600; }
+  .device-row .device-sub { color: var(--muted); font-size: 13px; }
+  .device-row .device-actions { display: flex; gap: 6px; flex-shrink: 0; }
+  .status-chip.action { cursor: pointer; border: 0; font: inherit; }
   .auto-options { margin: 12px 0 0; padding: 2px 14px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); }
   .auto-options[hidden] { display: none; }
   .auto-options label { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 6px 0; cursor: pointer; }
@@ -687,6 +696,16 @@
   </ul>
   <p class="setting-hint">Settings are saved on this device.</p>
 
+  <h4 class="group-title">Devices</h4>
+  <ul class="settings-list">
+    <li>
+      <span>Devices <span class="value" id="devicesCount"></span></span>
+      <button class="btn small" type="button" id="devicesBtn">Review</button>
+    </li>
+  </ul>
+  <p class="setting-hint">Devices added in Home Assistant appear here by themselves. Kudil watches a device once you
+    confirm it.</p>
+
   <h4 class="group-title">Alerts</h4>
   <ul class="settings-list">
     <li>
@@ -696,6 +715,17 @@
   </ul>
   <p class="setting-hint">Rings every family phone the way a water leak would, even on silent. Needs the PIN.
     Each phone must allow it once (see the README: Critical alerts).</p>
+</dialog>
+<dialog id="devicesDialog" class="sheet" aria-labelledby="devicesTitle">
+  <div class="sheet-head">
+    <h3 id="devicesTitle">Devices</h3>
+    <button class="icon-btn" type="button" id="devicesClose" aria-label="Close devices">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+    </button>
+  </div>
+  <div id="devicesList"></div>
+  <p class="setting-hint">New devices record nothing and send no alerts until you confirm them. Hidden devices are
+    ignored. Changes need the PIN.</p>
 </dialog>
 <div class="toast" id="toast" role="status" hidden></div>
 
@@ -735,6 +765,7 @@ const dateClock = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'num
 
 let events = [];    // latest 50 events, for the activity table
 let activeAlerts = [];   // problems going on now (/api/alerts), for the banner and "Offline" cards
+let devicesView = [];   // devices from Home Assistant (/api/devices), for the Devices sheet and its chip (#99)
 let current = [];   // last value of every reading, for the status cards
 let lastSeenId = null;
 let activeType = 'all';
@@ -1095,6 +1126,13 @@ function renderStatus() {
       ? el('span', 'status-chip bad', 'Water leak')
       : el('span', 'status-chip', 'No leaks'));
   }
+  const toReview = devicesView.filter(d => d.status === 'new' && d.inHomeAssistant).length;
+  if (toReview) {
+    const chip = el('button', 'status-chip warn action', toReview === 1 ? '1 new device to review' : toReview + ' new devices to review');
+    chip.type = 'button';
+    chip.onclick = openDevices;
+    chips.append(chip);
+  }
   for (const [d, s] of summaries) {
     if (s[0] === 'Running') chips.append(el('span', 'status-chip info', d.name + ' running'));
     if (s[0] === 'Paused') chips.append(el('span', 'status-chip warn', d.name + ' paused'));
@@ -1327,6 +1365,7 @@ let everLoaded = false;
 async function load() {
   everLoaded = true;
   loadAlerts();   // in parallel: the banner shouldn't wait for the activity list
+  loadDevices();  // the "new devices to review" chip
   loadWeather();  // the server keeps it for 10 minutes, so asking often is cheap
   if (followsSun()) loadSun();   // at most every 10 minutes
   try {
@@ -1387,6 +1426,94 @@ function addLiveEvent(e) {
   setStatus('Live', '', clockFormat.format(new Date()));
   if (e.type === 'command') setTimeout(loadControls, 1500);   // someone changed a device: show its new setting
   if (ALERT_TYPES.includes(e.type)) loadAlerts();               // a problem started or ended
+  if (e.type === 'notice' && /^New device found/.test(e.value || '')) loadDevices();
+}
+
+// ---------------------------------------------------------------- devices (#99)
+
+const DEVICE_ICONS = { leak: 'drop', opening: 'door', garage: 'door', plug: 'plug', 'switch': 'plug', lock: 'lock',
+  thermostat: 'thermo', smoke: 'bell', co: 'bell' };
+const DEVICE_GROUPS = [['new', 'To review'], ['confirmed', 'Watched'], ['hidden', 'Hidden']];
+
+async function loadDevices() {
+  try {
+    const res = await fetch('/api/devices', { cache: 'no-store' });
+    if (!res.ok) return;
+    devicesView = await res.json();
+    renderDevices();
+    renderStatus();   // the "new devices to review" chip
+  } catch (err) { /* offline: keep what is shown */ }
+}
+
+function renderDevices() {
+  const toReview = devicesView.filter(d => d.status === 'new' && d.inHomeAssistant).length;
+  $('devicesCount').textContent = toReview ? '· ' + toReview + ' new' : '';
+  const box = $('devicesList');
+  box.replaceChildren();
+  if (!devicesView.length) {
+    box.append(el('p', 'setting-hint', 'No devices from Home Assistant yet.'));
+    return;
+  }
+  for (const [status, title] of DEVICE_GROUPS) {
+    const group = devicesView.filter(d => d.status === status);
+    if (!group.length) continue;
+    box.append(el('h4', 'group-title', title));
+    const list = el('ul', 'device-list');
+    list.append(...group.map(deviceRow));
+    box.append(list);
+  }
+}
+
+function deviceRow(d) {
+  const row = el('li', 'device-row');
+  const ic = el('span', 'appliance-icon');
+  ic.append(icon(DEVICE_ICONS[d.kind] || (d.kind === 'appliance' ? iconFor(d.name) : 'device')));
+  const text = el('div', 'device-text');
+  text.append(el('span', 'device-name', d.name));
+  const where = [d.kindLabel, d.room, d.maker].filter(Boolean).join(' · ');
+  text.append(el('span', 'device-sub', where + (d.inHomeAssistant ? '' : ' · removed from Home Assistant')));
+  if (d.measures.length) text.append(el('span', 'device-sub', d.measures.join(', ')));
+  const actions = el('div', 'device-actions');
+  const button = (label, onClick) => { const b = el('button', 'btn small', label); b.type = 'button'; b.onclick = onClick; return b; };
+  if (d.status === 'new') {
+    actions.append(button('Confirm', () => {
+      const name = prompt('What does the family call it? Kudil watches it under this name.', d.suggestedName);
+      if (name !== null) chooseDevice(d, 'confirm', name);
+    }), button('Hide', () => chooseDevice(d, 'hide')));
+  } else if (d.status === 'confirmed') {
+    actions.append(button('Hide', () => {
+      if (confirm('Stop watching ' + d.name + '? It records nothing and sends no alerts while hidden.')) chooseDevice(d, 'hide');
+    }));
+  } else {
+    actions.append(button('Show', () => chooseDevice(d, 'show')));
+  }
+  row.append(ic, text, actions);
+  return row;
+}
+
+/** Confirm, hide or show a device. Needs the PIN: it decides what Kudil watches. */
+async function chooseDevice(d, action, name) {
+  if (!await ensureUnlocked()) return;
+  try {
+    const res = await fetch('/api/devices/' + d.id, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', [PIN_HEADER]: controlPin },
+      body: JSON.stringify({ action, name })
+    });
+    const body = await res.json().catch(() => ({}));
+    if (res.status === 401 || res.status === 429 || res.status === 403) lockControls();
+    else if (res.ok) keepUnlocked();
+    toast(body.message || (res.ok ? 'Done.' : 'That didn\'t work (HTTP ' + res.status + ').'), !res.ok);
+    loadDevices();
+  } catch (err) {
+    toast('Kudil is not reachable.', true);
+  }
+}
+
+function openDevices() {
+  renderDevices();
+  $('devicesDialog').showModal();
+  loadDevices();
 }
 
 // ---------------------------------------------------------------- alerts
@@ -1847,6 +1974,9 @@ $('settingsBtn').addEventListener('click', () => {
 });
 $('settingsClose').addEventListener('click', () => $('settings').close());
 $('testCriticalBtn').addEventListener('click', sendTestAlert);
+$('devicesBtn').addEventListener('click', () => { $('settings').close(); openDevices(); });
+$('devicesClose').addEventListener('click', () => $('devicesDialog').close());
+if (location.hash === '#devices') openDevices();   // a bookmark straight to Devices
 if (location.hash === '#settings') $('settingsBtn').click();   // a bookmark straight to Settings
 $('settings').addEventListener('click', e => {   // a tap outside the sheet closes it
   const r = $('settings').getBoundingClientRect();
