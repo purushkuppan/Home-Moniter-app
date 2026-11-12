@@ -25,6 +25,9 @@ jobs:
       - name: Test the Home Assistant update script
         # With stand-in docker, systemctl and curl that only record what they are asked to do.
         run: bash deploy/test/ha-update-test.sh
+      - name: Test the Z-Wave setup script
+        # With stand-in docker and curl that only record what they are asked to do.
+        run: bash deploy/test/zwave-setup-test.sh
       - name: Test the backup script
         # sqlite3 is preinstalled on GitHub's Ubuntu runners; installed here only if an image ever drops it.
         run: |

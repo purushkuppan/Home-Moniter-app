@@ -39,6 +39,7 @@ sudo bash setup-hub.sh      # service, folders, credentials, sudo rule, firewall
 sudo bash setup-runner.sh   # GitHub runner for automatic deploys
 sudo bash setup-tailscale.sh   # optional: open Kudil away from home (see Remote access)
 sudo bash setup-updates.sh     # automatic security updates, restart at 04:00 when needed (see Updates)
+sudo bash setup-zwave.sh       # with a Z-Wave stick: Z-Wave JS UI on the hub only, keys root-only (see Z-Wave)
 ```
 Re-run `setup-hub.sh` after any change to `install-release.sh`, `backup.sh` or the systemd units in git. The hub uses its
 own copy in `/opt/homehub/bin`, which the runner can't modify.
@@ -75,11 +76,14 @@ Every night at 03:00 `homehub-backup.timer` runs `/opt/homehub/bin/backup.sh`, w
   `-wal` file) and checked with `PRAGMA integrity_check`
 - `homeassistant/`: Home Assistant's configuration (`.storage`, YAML files, `secrets.yaml`) and a checked copy of
   its history database; logs and caches are left out
+- `zwave-js-ui/` (on a hub with a Z-Wave stick): Z-Wave JS UI's settings with the **Z-Wave security keys**, its
+  node list and caches; logs and web sessions are left out. With these, a new install takes over the stick's network
+  without re-pairing any device.
 
 The newest 14 archives are kept (`KEEP`); a failed backup never removes older ones. If the hub was off at 03:00,
 the backup runs soon after it starts. Each archive is a few MB.
 
-The archives hold Home Assistant's `secrets.yaml` and your home's history, so they are root-only (folder `0700`,
+The archives hold Home Assistant's `secrets.yaml`, the Z-Wave security keys and your home's history, so they are root-only (folder `0700`,
 files `0600`). Keep any copy just as private. Kudil's own token and PIN in `/etc/homehub/credentials` are **not**
 backed up; after a rebuild, create a new Home Assistant token and set the PIN again (see *Secrets*).
 
@@ -120,7 +124,34 @@ sudo rm -f /opt/homeassistant/home-assistant_v2.db-wal /opt/homeassistant/home-a
 sudo cp -a /root/restore/homeassistant/. /opt/homeassistant/
 sudo docker start homeassistant
 ```
+Z-Wave JS UI (the stick must be plugged in; its own memory holds the network, the folder holds the keys):
+```bash
+sudo docker stop -t 30 zwave-js-ui
+sudo cp -a /root/restore/zwave-js-ui/. /opt/zwave-js-ui/
+sudo chmod 0700 /opt/zwave-js-ui
+sudo docker start zwave-js-ui
+```
 Then `sudo rm -rf /root/restore`.
+
+## Z-Wave (Z-Wave JS UI)
+Z-Wave JS UI runs in its own container (`zwave-js-ui`, MIT) with its data and the Z-Wave security keys in
+`/opt/zwave-js-ui`. Home Assistant talks to it on `127.0.0.1:3000`. `setup-zwave.sh` locks it down (#144):
+- its web UI (8091) answers on the hub itself only. Docker-published ports bypass the firewall, so `0.0.0.0:8091`
+  would be open to every Wi-Fi and Tailscale device;
+- `/opt/zwave-js-ui` can be read by root only;
+- it checks that the UI asks for a login.
+```bash
+cd ~/homehub-deploy && sudo bash setup-zwave.sh
+```
+It recreates the container with the same image, stick, folder and time zone, and starts the old one again if the new
+one doesn't come back within two minutes. Z-Wave devices are unavailable for a few seconds; Kudil ignores that.
+
+**Opening the UI** (to pair or remove a device), from the PC:
+```powershell
+ssh -L 8091:127.0.0.1:8091 purush@192.168.5.251
+```
+then open http://localhost:8091 while that window stays open. If the script says there is no login yet: in the UI,
+**Settings → General → Auth** on → **Save**, sign in as `admin` / `zwave`, and change the password at once.
 
 ## Updates
 ### Ubuntu and Tailscale: automatic
