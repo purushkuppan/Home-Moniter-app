@@ -59,10 +59,15 @@ run() {   # run [NAME=value...]: a hub whose zwave-js-ui publishes 8091 on every
     echo "3000/tcp=127.0.0.1 8091/tcp= " > "$T/fake/containers/zwave-js-ui/ports"
     echo '{}' > "$T/store/settings.json" && chmod 0755 "$T/store"
     : > "$T/fake/calls"
+    case $hub in   # a test's own change to that hub
+        locked-down) echo "3000/tcp=127.0.0.1 8091/tcp=127.0.0.1 " > "$T/fake/containers/zwave-js-ui/ports" ;;
+        no-container) rm -r "$T/fake/containers/zwave-js-ui" ;;
+    esac
     env PATH="$T/bin:$PATH" FAKE="$T/fake" ZWAVE_SETUP_TEST=1 ZWAVE_DIR="$T/store" FAKE_STICK="$STICK" \
         FAKE_SETTINGS="bridge unless-stopped false [\"$T/store:/usr/src/app/store\"] 1" \
         ZWAVE_WAIT_SECONDS=0 ZWAVE_POLL_SECONDS=0 FAKE_UP=1 "$@" bash "$SCRIPT" > "$T/log" 2>&1
 }
+hub=open   # what run() starts from: open (8091 on every address), locked-down, or no-container
 called() { grep -q -F -- "$1" "$T/fake/calls"; }
 ports() { cat "$T/fake/containers/zwave-js-ui/ports" 2>/dev/null; }
 untouched() { ! called "docker stop" && ! called "docker run" && test "$(ports)" = "3000/tcp=127.0.0.1 8091/tcp= "; }
@@ -81,10 +86,11 @@ check "checks the login" called "curl -s -o /dev/null --max-time 5 -w %{http_cod
 check "...which is on" grep -q "asks for a login" "$T/log"
 
 # 2. Running it again changes nothing.
-check "a locked-down container is left running" run bash -c \
-    'echo "3000/tcp=127.0.0.1 8091/tcp=127.0.0.1 " > "$FAKE/containers/zwave-js-ui/ports"; exec bash "$0"' "$SCRIPT"
+hub=locked-down
+check "a locked-down container is left running" run
 check "...not recreated" fails called "docker run"
 check "...not stopped" fails called "docker stop"
+hub=open
 
 # 3. No login yet: done, but says what to do and exits 2.
 set +e; run FAKE_SETTINGS_CODE=200; code=$?; set -e
@@ -107,7 +113,10 @@ check "other settings are left to change by hand" \
 check "...and nothing changed" untouched
 check "a different stick mapping is left alone" fails run FAKE_STICK=/dev/ttyUSB0
 check "...and nothing changed" untouched
-check "no container: stops" fails run FAKE_SETTINGS=x bash -c 'rm -r "$FAKE/containers/zwave-js-ui"; exec bash "$0"' "$SCRIPT"
+hub=no-container
+check "no container: stops" fails run
+check "...and says so" grep -q "there is no 'zwave-js-ui' container" "$T/log"
+hub=open
 
 if [[ $EUID -ne 0 ]]; then
     check "refuses to run without sudo" fails env PATH="$T/bin:$PATH" bash "$SCRIPT" 2>/dev/null
