@@ -37,7 +37,7 @@ public class EventCleanup {
     private static final Logger log = LoggerFactory.getLogger(EventCleanup.class);
 
     /** Event types written by alerts (see {@code Alert.EVENT_TYPES}); they are kept for {@code keep-alert-days}. */
-    public static final List<String> ALERT_TYPES = List.of("alert", "alertCleared", "notice");
+    public static final List<String> ALERT_TYPES = List.of("alert", "alertCleared", "notice", "alertAck");
     static final int BATCH_SIZE = 5_000;
     /** The first cleanup waits a little, so it doesn't compete with the connectors and alerts starting up. */
     static final Duration FIRST_RUN_AFTER = Duration.ofMinutes(2);
