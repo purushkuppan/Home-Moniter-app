@@ -11,6 +11,7 @@ import com.homehub.homeassistant.EntityNames;
 import com.homehub.homeassistant.EntityPatterns;
 import com.homehub.homeassistant.HomeAssistantProperties;
 import com.homehub.homeassistant.HomeAssistantStatus;
+import com.homehub.homeassistant.NotificationAction;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.WebSocket;
@@ -123,6 +124,9 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
 
     // Connection status: reachable while the last poll worked or the live connection is up.
     private final Consumer<HomeAssistantStatus> statusSink;
+    /** Taps on phone notification buttons; published as Spring events in the running app. */
+    private Consumer<NotificationAction> actionSink = action -> { };
+    static final String NOTIFICATION_ACTION = "mobile_app_notification_action";
     private volatile boolean liveConnected;
     private boolean lastPollOk;
     private Boolean reportedReachable;   // null until the first report
@@ -139,6 +143,12 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
             ApplicationEventPublisher publisher) {
         this(RestClient.builder(), properties, include, live ? repository::saveIfChanged : null, publisher::publishEvent,
                 pollWhileLive, Clock.systemUTC(), unavailableGrace, names);
+        this.actionSink = publisher::publishEvent;
+    }
+
+    /** Lets tests see taps on phone notification buttons. */
+    void onNotificationAction(Consumer<NotificationAction> sink) {
+        this.actionSink = sink;
     }
 
     /** Lets tests supply a builder bound to a mock server and their own sink for live events. */
@@ -386,6 +396,9 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
                 backoffSeconds = 1;
                 ws.sendText(json.writeValueAsString(
                         Map.of("id", 1, "type", "subscribe_events", "event_type", "state_changed")), true);
+                // Buttons tapped on phone notifications, e.g. "I'm on it" on a critical alert (#101).
+                ws.sendText(json.writeValueAsString(
+                        Map.of("id", 2, "type", "subscribe_events", "event_type", NOTIFICATION_ACTION)), true);
                 log.info("Home Assistant live updates connected");
                 liveConnection(true);
             }
@@ -403,7 +416,13 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
                 }
             }
             case "event" -> {
-                Map<String, Object> data = asMap(asMap(msg.get("event")).get("data"));
+                Map<String, Object> event = asMap(msg.get("event"));
+                Map<String, Object> data = asMap(event.get("data"));
+                if (NOTIFICATION_ACTION.equals(text(event.get("event_type")))) {
+                    String action = text(data.get("action"));
+                    if (!action.isEmpty()) actionSink.accept(new NotificationAction(action, Instant.now()));
+                    return;
+                }
                 Map<String, Object> newState = asMap(data.get("new_state"));
                 if (!newState.isEmpty() && isIncluded(text(data.get("entity_id")))) {
                     onStateChanged(newState);

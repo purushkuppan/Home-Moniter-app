@@ -26,8 +26,11 @@ public record Alert(String key, Level level, String device, String message, Inst
         }
     }
 
+    /** Event type of "Purushphone is on it: Water leak in the kitchen" (#101), written when someone answers. */
+    static final String ACK_EVENT_TYPE = "alertAck";
+
     /** Event types written by alerts themselves; they are never device readings. */
-    static final Set<String> EVENT_TYPES = Set.of("alert", "alertCleared", "notice");
+    static final Set<String> EVENT_TYPES = Set.of("alert", "alertCleared", "notice", ACK_EVENT_TYPE);
 
     /** Key of the "can't reach Home Assistant" alert and its all-clear. */
     static final String CONNECTION_KEY = "connection:homeassistant";

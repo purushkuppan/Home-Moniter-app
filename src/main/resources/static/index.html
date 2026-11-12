@@ -256,6 +256,9 @@
     background: var(--bad-soft); color: var(--bad); font-weight: 600;
   }
   .alert-item .since { margin-left: auto; font-size: 12px; font-weight: 400; white-space: nowrap; }
+  .alert-item .alert-text { display: grid; gap: 2px; }
+  .alert-item .ack { font-size: 12px; font-weight: 400; }
+  .alert-item .btn { flex-shrink: 0; }
 
   /* Quick controls: one tile per appliance action, its state in plain words */
   .quick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; margin-bottom: 24px; }
@@ -683,6 +686,16 @@
     <li><span>About Kudil</span><span class="value" id="aboutVersion">–</span></li>
   </ul>
   <p class="setting-hint">Settings are saved on this device.</p>
+
+  <h4 class="group-title">Alerts</h4>
+  <ul class="settings-list">
+    <li>
+      <span>Critical alert test</span>
+      <button class="btn small" type="button" id="testCriticalBtn">Send test</button>
+    </li>
+  </ul>
+  <p class="setting-hint">Rings every family phone the way a water leak would, even on silent. Needs the PIN.
+    Each phone must allow it once (see the README: Critical alerts).</p>
 </dialog>
 <div class="toast" id="toast" role="status" hidden></div>
 
@@ -758,7 +771,7 @@ function iconFor(device, type) {
 
 /** "machineState" -> "Machine state" */
 // Friendlier names for technical reading types. Display only: the database keeps the original type.
-const TYPE_LABELS = { contact: 'Door', command: 'Command', alert: 'Alert', alertCleared: 'All clear', notice: 'Notice',
+const TYPE_LABELS = { contact: 'Door', command: 'Command', alert: 'Alert', alertCleared: 'All clear', notice: 'Notice', alertAck: 'On it',
   leak: 'Water', switch: 'Power', power: 'Power use' };
 
 /** "Fridge" -> "Fridge door", but "Back door" stays "Back door". */
@@ -766,7 +779,7 @@ function doorName(name) {
   return /\bdoor$/i.test(name) ? name : name + ' door';
 }
 // Events HomeHub writes itself: shown in the activity list, never as a device reading.
-const ALERT_TYPES = ['alert', 'alertCleared', 'notice'];
+const ALERT_TYPES = ['alert', 'alertCleared', 'notice', 'alertAck'];
 const NOT_READINGS = new Set(['command', ...ALERT_TYPES]);
 
 function prettyType(type) {
@@ -783,7 +796,7 @@ function badge(type, value) {
   else if (type === 'temperature' || type === 'command') tone = 'temp';
   else if (type === 'leak') tone = lower === 'wet' ? 'bad' : lower === 'dry' ? 'ok' : '';
   else if (type === 'switch') tone = lower === 'on' ? 'active' : '';
-  else if (type === 'alertCleared' || type === 'notice') tone = 'ok';
+  else if (type === 'alertCleared' || type === 'notice' || type === 'alertAck') tone = 'ok';
   else if (['closed', 'locked', 'done', 'finished', 'finish'].includes(lower)) tone = 'ok';
   else if (['open', 'unlocked', 'pause', 'paused'].includes(lower)) tone = 'warn';
   else if (['error', 'fault', 'alarm', 'unavailable'].includes(lower)) tone = 'bad';
@@ -1096,7 +1109,19 @@ function renderStatus() {
       const item = el('li', 'alert-item');
       const when = el('span', 'since', 'since ' + sinceText(since));
       when.title = dayFormat.format(since) + ', ' + clockFormat.format(since);
-      item.append(icon('bell'), el('span', '', keepTogether(convertTemps(a.message || ''))), when);
+      // A critical alert (a leak) rings on the phones until someone answers; it can be answered here too.
+      const text = el('span', 'alert-text');
+      text.append(el('span', '', keepTogether(convertTemps(a.message || ''))));
+      if (a.acknowledgedBy) {
+        text.append(el('span', 'ack', 'On it: ' + a.acknowledgedBy + ' · ' + sinceText(new Date(a.acknowledgedAt))));
+      }
+      item.append(icon('bell'), text, when);
+      if (a.critical && !a.acknowledgedBy) {
+        const answer = el('button', 'btn small', 'I\'m on it');
+        answer.type = 'button';
+        answer.onclick = () => acknowledge(a);
+        item.append(answer);
+      }
       return item;
     }));
     children.push(list);
@@ -1116,6 +1141,7 @@ function describe(e) {
   if (e.type === 'alert') return [convertTemps(e.value || 'Alert'), 'bad'];
   if (e.type === 'alertCleared') return [convertTemps(e.value || 'All clear'), 'ok'];
   if (e.type === 'notice') return [convertTemps(e.value || 'Notice'), 'info'];
+  if (e.type === 'alertAck') return [e.value || 'On it', 'ok'];
   if (e.type === 'command') return [main + ': ' + convertTemps(e.value || 'changed'), 'idle'];
   if (e.type === 'contact') {
     if (v === 'open') return [doorName(name) + ' opened', 'warn'];
@@ -1376,6 +1402,35 @@ async function loadAlerts() {
 function renderAlerts(list) {
   activeAlerts = list;
   renderCards();   // also redraws the status card: an offline appliance shows as "Offline"
+}
+
+/** "I'm on it" for a critical alert: the phones stop ringing. No PIN: it doesn't change any device. */
+async function acknowledge(a) {
+  try {
+    const res = await fetch('/api/alerts/ack', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: a.key })
+    });
+    const body = await res.json().catch(() => ({}));
+    toast(body.message || (res.ok ? 'Thanks.' : 'That didn\'t work (HTTP ' + res.status + ').'), !res.ok);
+    loadAlerts();
+  } catch (err) {
+    toast('Kudil is not reachable.', true);
+  }
+}
+
+/** Settings → rings every phone with a test critical alert. Needs the PIN: it sounds an alarm on the family's phones. */
+async function sendTestAlert() {
+  if (!confirm('Ring every family phone with a test critical alert now? It sounds even on silent.')) return;
+  if (!await ensureUnlocked()) return;
+  try {
+    const res = await fetch('/api/alerts/test', { method: 'POST', headers: { [PIN_HEADER]: controlPin } });
+    const body = await res.json().catch(() => ({}));
+    if (res.status === 401 || res.status === 429 || res.status === 403) lockControls();
+    else if (res.ok) keepUnlocked();
+    toast(body.message || (res.ok ? 'Sent.' : 'That didn\'t work (HTTP ' + res.status + ').'), !res.ok);
+  } catch (err) {
+    toast('Kudil is not reachable.', true);
+  }
 }
 
 // ---------------------------------------------------------------- device controls
@@ -1791,6 +1846,7 @@ $('settingsBtn').addEventListener('click', () => {
   if (followsSun()) loadSun();
 });
 $('settingsClose').addEventListener('click', () => $('settings').close());
+$('testCriticalBtn').addEventListener('click', sendTestAlert);
 if (location.hash === '#settings') $('settingsBtn').click();   // a bookmark straight to Settings
 $('settings').addEventListener('click', e => {   // a tap outside the sheet closes it
   const r = $('settings').getBoundingClientRect();

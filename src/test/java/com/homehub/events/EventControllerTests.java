@@ -221,6 +221,20 @@ class EventControllerTests {
     }
 
     @Test
+    void criticalAlertsCanBeAnsweredAndTestedFromTheDashboard() throws Exception {
+        String page = get("/");
+        // "I'm on it" on an unanswered critical alert; who answered once someone did.
+        assertThat(page).contains("if (a.critical && !a.acknowledgedBy) {", "el('button', 'btn small', 'I\\'m on it')",
+                "'On it: ' + a.acknowledgedBy", "fetch('/api/alerts/ack'");
+        // Settings: the test alert asks first and needs the PIN.
+        String settings = page.substring(page.indexOf("<dialog id=\"settings\""), page.indexOf("</dialog>", page.indexOf("<dialog id=\"settings\"")));
+        assertThat(settings).contains(">Alerts<", "id=\"testCriticalBtn\"", ">Send test<");
+        assertThat(page).contains("$('testCriticalBtn').addEventListener('click', sendTestAlert);",
+                "if (!await ensureUnlocked()) return;\n  try {\n    const res = await fetch('/api/alerts/test'",
+                "const ALERT_TYPES = ['alert', 'alertCleared', 'notice', 'alertAck'];");
+    }
+
+    @Test
     void versionIdentifiesTheRunningServer() throws Exception {
         String version = get("/api/version");
         assertThat(version).contains("\"started\":\"").contains("\"version\":\"");

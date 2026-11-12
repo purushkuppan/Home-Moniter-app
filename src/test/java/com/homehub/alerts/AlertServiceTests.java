@@ -69,6 +69,65 @@ class AlertServiceTests {
                 .contains(tuple("Washer", "notice", "Washer finished"));
     }
 
+    @Autowired CriticalAlertProperties critical;
+
+    private HttpResponse<String> post(String path, String json, String pin) throws Exception {
+        HttpRequest.Builder request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(json));
+        if (pin != null) request.header("X-HomeHub-Pin", pin);
+        return HttpClient.newHttpClient().send(request.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    private String alerts() throws Exception {
+        return HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/alerts")).build(),
+                HttpResponse.BodyHandlers.ofString()).body();
+    }
+
+    @Test
+    void criticalAlertDefaults() {
+        assertThat(critical.kinds()).containsExactly("leak");
+        assertThat(critical.repeatEvery()).isEqualTo(Duration.ofMinutes(5));
+        assertThat(critical.maxRepeats()).isEqualTo(24);
+        assertThat(critical.escalateAfter()).isEqualTo(Duration.ofMinutes(10));
+        assertThat(critical.escalateTo()).isEmpty();
+    }
+
+    @Test
+    void aLeakIsCriticalAndCanBeAnsweredFromTheDashboard() throws Exception {
+        repository.add("Kitchen leak sensor", "leak", "dry");
+        repository.add("Kitchen leak sensor", "leak", "wet");
+        String active = "";
+        for (int i = 0; i < 50 && !active.contains("Water leak in the kitchen"); i++) {
+            Thread.sleep(100);   // alerts are raised on their own thread
+            active = alerts();
+        }
+        assertThat(active).contains("\"key\":\"leak:kitchen leak sensor\"", "\"critical\":true", "\"acknowledgedBy\":null");
+
+        HttpResponse<String> answer = post("/api/alerts/ack", "{\"key\":\"leak:kitchen leak sensor\"}", null);
+        assertThat(answer.statusCode()).isEqualTo(200);
+        assertThat(alerts()).contains("\"acknowledgedBy\":\"dashboard\"");
+        assertThat(post("/api/alerts/ack", "{\"key\":\"leak:kitchen leak sensor\"}", null).statusCode())
+                .as("already answered").isEqualTo(409);
+        assertThat(repository.latest(10)).extracting(Event::type, Event::value)
+                .contains(tuple("alertAck", "On it (dashboard): Water leak in the kitchen"));
+
+        repository.add("Kitchen leak sensor", "leak", "dry");   // over: nothing left on the dashboard
+        for (int i = 0; i < 50 && alerts().contains("Water leak"); i++) Thread.sleep(100);
+        assertThat(alerts()).isEqualTo("[]");
+    }
+
+    @Test
+    void answeringNeedsAKnownAlertAndTheTestNeedsThePin() throws Exception {
+        assertThat(post("/api/alerts/ack", "{\"key\":\"leak:nothing\"}", null).statusCode()).isEqualTo(409);
+        assertThat(post("/api/alerts/ack", "{}", null).statusCode()).isEqualTo(400);
+        // No PIN is set in the tests: the test alert, which rings the family's phones, stays off.
+        HttpResponse<String> test = post("/api/alerts/test", "", "1234");
+        assertThat(test.statusCode()).isEqualTo(403);
+        assertThat(test.body()).contains("Set a PIN");
+    }
+
     @Test
     void apiListsActiveProblems() throws Exception {
         HttpResponse<String> response = HttpClient.newHttpClient().send(

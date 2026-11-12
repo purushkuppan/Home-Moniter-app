@@ -102,6 +102,8 @@ HomeHub warns when something needs attention. Details and trade-offs: [ADR 5](do
 | Freeze warning | Checked at 19:00: tomorrow's forecast low at or below 32 °F. "Freeze warning: low of 28 °F tonight" | – |
 | Rain expected | Checked at 07:00: today's forecast has at least 0.1 in. "Rain expected today: 0.31 in" (or Snow) | – |
 | Backup missing | Hub only: the last good nightly backup is more than 26 hours old. "Nightly backup missing. Last good backup: Sun Nov 8, 4:01 PM." | "Backups are working again. Last backup: Tue Nov 10, 3:01 AM." |
+| Water leak (**critical**) | A leak sensor reads wet. "Water leak in the kitchen". Rings as an alarm and repeats every 5 minutes until someone taps **I'm on it** (see below) | "Kitchen leak sensor is dry again." |
+| Low battery | A battery at or below 20%. "Leak sensor battery is low: 15%. Replace it soon." | "Leak sensor battery is fine again: 100%." |
 
 - **Dashboard:** a red banner shows problems still going on. Every alert is listed in the activity list
   (Alert, All clear, Notice).
@@ -109,6 +111,25 @@ HomeHub warns when something needs attention. Details and trade-offs: [ADR 5](do
   then add its notify action (Home Assistant: Settings › Tools › Actions, search `mobile_app`) to
   `homehub.alerts.send-to`. Tapping a notification opens the dashboard (on the home network). The "all clear"
   replaces the earlier notification.
+
+### Critical alerts
+A water leak (`homehub.alerts.critical.kinds`) must wake someone at 3 AM:
+- It **rings as an alarm**: on Android on the alarm volume (`alarm_stream`), on iPhone as a *critical alert*, both
+  also on silent and in Do Not Disturb. Other problems are *time sensitive* on iPhone, notices are *passive*.
+- It has an **I'm on it** button, on the phone and on the dashboard's alert. The first answer stops the repeats,
+  removes the notification from the other phones, and is recorded: "On it (Purushphone): Water leak in the kitchen".
+- Nobody answers: it is **sent again every 5 minutes**, and after 10 minutes also to `homehub.alerts.critical.escalate-to`
+  (e.g. a relative's phone; empty by default). After 24 repeats (2 hours) it stops ringing but stays on the dashboard.
+  Each step is in the activity list.
+- It ends when the sensor reads dry. A restart keeps an unanswered leak ringing and an answered one quiet.
+
+One-time phone setup, then check it with **Settings → Alerts → Send test** (needs the PIN):
+- **iPhone:** Settings › Notifications › Home Assistant › turn on **Critical Alerts** (the app asks the first time a
+  critical alert arrives, or turn it on there).
+- **Android:** Home Assistant app › Settings › Companion app › Notification channels: allow it to **override Do Not
+  Disturb** (Android settings › Apps › Home Assistant › Notifications › *Alarm stream* channel, and Do Not Disturb ›
+  Apps › Home Assistant). Keep the alarm volume up.
+- The **I'm on it** button reaches Kudil through Home Assistant's live connection; free, no extra service.
 - A problem that was already reported (a door, an offline device) is not reported again after a restart.
 - A quiet device is not offline: readings are only stored when they change, so the offline rule uses Home
   Assistant's "unavailable". If the hub itself loses power or Wi-Fi, nothing can be sent; see [ADR 7](docs/adr/0007-offline-and-connection-alerts.md).

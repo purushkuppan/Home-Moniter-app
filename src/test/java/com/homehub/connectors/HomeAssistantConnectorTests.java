@@ -17,6 +17,7 @@ import com.homehub.events.Event;
 import com.homehub.homeassistant.EntityNames;
 import com.homehub.homeassistant.HomeAssistantProperties;
 import com.homehub.homeassistant.HomeAssistantStatus;
+import com.homehub.homeassistant.NotificationAction;
 import java.net.http.WebSocket;
 import java.time.Clock;
 import java.time.Duration;
@@ -121,9 +122,11 @@ class HomeAssistantConnectorTests {
         connector.handleMessage(ws, "{\"type\":\"auth_required\",\"ha_version\":\"2026.11.0\"}");
         connector.handleMessage(ws, "{\"type\":\"auth_ok\"}");
         var sent = ArgumentCaptor.forClass(CharSequence.class);
-        verify(ws, times(2)).sendText(sent.capture(), eq(true));
+        verify(ws, times(3)).sendText(sent.capture(), eq(true));
         assertThat(sent.getAllValues().get(0).toString()).contains("\"type\":\"auth\"").contains("\"access_token\":\"secret\"");
         assertThat(sent.getAllValues().get(1).toString()).contains("subscribe_events").contains("state_changed");
+        assertThat(sent.getAllValues().get(2).toString()).contains("subscribe_events")
+                .contains("mobile_app_notification_action").contains("\"id\":2");
 
         String door = "binary_sensor.kitchen_refrigerator_fridge_door";
         connector.handleMessage(ws, stateChanged(door, "on", "door", "Refrigerator Fridge door", "2026-11-05T03:17:39+00:00"));
@@ -136,6 +139,27 @@ class HomeAssistantConnectorTests {
         assertThat(saved).extracting(Event::device, Event::type, Event::value, Event::time).containsExactly(
                 tuple("Refrigerator/Fridge", "contact", "open", Instant.parse("2026-11-05T03:17:39Z")),
                 tuple("Refrigerator/Fridge", "contact", "closed", Instant.parse("2026-11-05T03:17:42Z")));
+    }
+
+    @Test
+    void aTappedNotificationButtonIsPassedOnAndSavesNothing() {
+        List<Event> saved = new ArrayList<>();
+        List<NotificationAction> taps = new ArrayList<>();
+        var connector = new HomeAssistantConnector(RestClient.builder(), PROPS, HomeAssistantConnector.DEFAULT_INCLUDE, saved::add);
+        connector.onNotificationAction(taps::add);
+        WebSocket ws = mock(WebSocket.class);
+
+        connector.handleMessage(ws, """
+                {"id":2,"type":"event","event":{"event_type":"mobile_app_notification_action",
+                 "data":{"action":"KUDIL_ACK|mobile_app_purushphone|leak:kitchen leak sensor","tag":"homehub-leak:kitchen leak sensor"}}}
+                """);
+        connector.handleMessage(ws, """
+                {"id":2,"type":"event","event":{"event_type":"mobile_app_notification_action","data":{}}}
+                """);
+
+        assertThat(taps).extracting(NotificationAction::action)
+                .containsExactly("KUDIL_ACK|mobile_app_purushphone|leak:kitchen leak sensor");
+        assertThat(saved).isEmpty();
     }
 
     @Test
