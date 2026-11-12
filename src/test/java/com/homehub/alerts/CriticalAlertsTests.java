@@ -20,7 +20,7 @@ class CriticalAlertsTests {
 
     private static CriticalAlerts critical(List<String> escalateTo, int maxRepeats) {
         return new CriticalAlerts(new CriticalAlertProperties(List.of("leak"), Duration.ofMinutes(5), maxRepeats,
-                Duration.ofMinutes(10), escalateTo));
+                Duration.ofMinutes(10), escalateTo, List.of()));
     }
 
     private static Instant at(int minutes) {

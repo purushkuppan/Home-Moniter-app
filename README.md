@@ -116,6 +116,10 @@ HomeHub warns when something needs attention. Details and trade-offs: [ADR 5](do
 A water leak (`homehub.alerts.critical.kinds`) must wake someone at 3 AM:
 - It **rings as an alarm**: on Android on the alarm volume (`alarm_stream`), on iPhone as a *critical alert*, both
   also on silent and in Do Not Disturb. Other problems are *time sensitive* on iPhone, notices are *passive*.
+- On Android phones listed in `homehub.alerts.critical.speak-on` it is also **spoken at full alarm volume**
+  ("Kudil alert. Water leak in the kitchen"): the app turns the alarm volume to the maximum, speaks, and turns it back,
+  also on silent. On some phones (a OnePlus 13 here) the notification alone sounds like any other, whatever its
+  channel settings. Not for iPhones, where it would show as a plain "TTS" message.
 - It has an **I'm on it** button, on the phone and on the dashboard's alert. The first answer stops the repeats,
   removes the notification from the other phones, and is recorded: "On it (Purushphone): Water leak in the kitchen".
 - Nobody answers: it is **sent again every 5 minutes**, and after 10 minutes also to `homehub.alerts.critical.escalate-to`

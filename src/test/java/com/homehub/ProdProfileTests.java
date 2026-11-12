@@ -43,6 +43,8 @@ class ProdProfileTests {
         // Alerts go to the phone on the hub only, and tapping one opens the dashboard through Tailscale (home and away).
         assertThat(prod.getProperty("homehub.alerts.enabled")).isEqualTo("true");
         assertThat(prod.getProperty("homehub.alerts.send-to")).isEqualTo("notify.mobile_app_purushphone");
+        assertThat(prod.getProperty("homehub.alerts.critical.speak-on")).as("the Android phone hears critical alerts")
+                .isEqualTo("notify.mobile_app_purushphone");
         assertThat(prod.getProperty("homehub.alerts.link")).isEqualTo("http://kudil:8080");
         // The hub alerts when its nightly backup (deploy/backup.sh) stops; elsewhere there is no backup to watch.
         assertThat(prod.getProperty("homehub.alerts.backup.status-file")).isEqualTo("/var/lib/homehub-backup/last-success");
