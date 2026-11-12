@@ -235,6 +235,20 @@ class EventControllerTests {
     }
 
     @Test
+    void devicesCanBeReviewedFromTheDashboard() throws Exception {
+        String page = get("/").replace("\r\n", "\n");
+        // Settings → Devices, and a chip on the status card while some wait for review.
+        String settings = page.substring(page.indexOf("<dialog id=\"settings\""), page.indexOf("</dialog>", page.indexOf("<dialog id=\"settings\"")));
+        assertThat(settings).contains(">Devices<", "id=\"devicesBtn\"", ">Review<");
+        assertThat(page).contains("<dialog id=\"devicesDialog\"", "' new devices to review'", "chip.onclick = openDevices;");
+        // New devices are confirmed with a name, hidden, or shown again; every choice needs the PIN.
+        assertThat(page).contains("const DEVICE_GROUPS = [['new', 'To review'], ['confirmed', 'Watched'], ['hidden', 'Hidden']];",
+                "prompt('What does the family call it? Kudil watches it under this name.', d.suggestedName)",
+                "async function chooseDevice(d, action, name) {\n  if (!await ensureUnlocked()) return;",
+                "fetch('/api/devices/' + d.id");
+    }
+
+    @Test
     void versionIdentifiesTheRunningServer() throws Exception {
         String version = get("/api/version");
         assertThat(version).contains("\"started\":\"").contains("\"version\":\"");

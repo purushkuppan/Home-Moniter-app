@@ -1,17 +1,22 @@
 package com.homehub.connectors;
 
+import static com.homehub.homeassistant.JsonValues.asList;
 import static com.homehub.homeassistant.JsonValues.asMap;
 import static com.homehub.homeassistant.JsonValues.firstNonBlank;
 import static com.homehub.homeassistant.JsonValues.text;
 
 import com.homehub.events.Event;
 import com.homehub.events.EventRepository;
+import com.homehub.devices.DeviceCatalog;
 import com.homehub.homeassistant.DeviceNames;
+import com.homehub.homeassistant.EntityDirectory;
 import com.homehub.homeassistant.EntityNames;
 import com.homehub.homeassistant.EntityPatterns;
 import com.homehub.homeassistant.HomeAssistantProperties;
 import com.homehub.homeassistant.HomeAssistantStatus;
+import com.homehub.homeassistant.JsonValues;
 import com.homehub.homeassistant.NotificationAction;
+import com.homehub.homeassistant.RegistrySnapshot;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.WebSocket;
@@ -30,11 +35,13 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -46,6 +53,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.SmartLifecycle;
+import org.springframework.context.event.EventListener;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
@@ -127,6 +135,20 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
     /** Taps on phone notification buttons; published as Spring events in the running app. */
     private Consumer<NotificationAction> actionSink = action -> { };
     static final String NOTIFICATION_ACTION = "mobile_app_notification_action";
+
+    // Devices from Home Assistant's registries (#99)
+    private volatile EntityDirectory directory = EntityDirectory.NONE;
+    static final List<String> REGISTRY_UPDATES =
+            List.of("area_registry_updated", "device_registry_updated", "entity_registry_updated");
+    private static final List<String> REGISTRY_LISTS =
+            List.of("config/area_registry/list", "config/device_registry/list", "config/entity_registry/list");
+    /** Message ids must increase on each connection; ids 1 and 2 are the first two subscriptions. */
+    private final AtomicInteger messageIds = new AtomicInteger();
+    /** A registry read in progress: the answers to the three list commands, by command. */
+    private final Map<Integer, String> registryRequests = new HashMap<>();
+    private final Map<String, List<Map<String, Object>>> registryAnswers = new HashMap<>();
+    private final AtomicBoolean registryReadPending = new AtomicBoolean();
+    static final int REGISTRY_READ_DELAY_SECONDS = 5;   // Home Assistant sends a burst of updates while pairing
     private volatile boolean liveConnected;
     private boolean lastPollOk;
     private Boolean reportedReachable;   // null until the first report
@@ -139,11 +161,24 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
             @Value("${homehub.connectors.homeassistant.poll-while-live:5m}") Duration pollWhileLive,
             @Value("${homehub.connectors.homeassistant.unavailable-grace:2m}") Duration unavailableGrace,
             EntityNames names,
+            EntityDirectory directory,
             EventRepository repository,
             ApplicationEventPublisher publisher) {
         this(RestClient.builder(), properties, include, live ? repository::saveIfChanged : null, publisher::publishEvent,
                 pollWhileLive, Clock.systemUTC(), unavailableGrace, names);
         this.actionSink = publisher::publishEvent;
+        this.directory = directory;
+    }
+
+    /** Lets tests use a device directory (#99). */
+    void useDirectory(EntityDirectory directory) {
+        this.directory = directory;
+    }
+
+    /** The household confirmed or hid a device: read every state again on the next scheduler run (#99). */
+    @EventListener
+    public synchronized void onDevicesChanged(DeviceCatalog.DevicesChanged changed) {
+        lastPollAt = null;
     }
 
     /** Lets tests see taps on phone notification buttons. */
@@ -394,11 +429,17 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
             case "auth_required" -> ws.sendText(json.writeValueAsString(Map.of("type", "auth", "access_token", token)), true);
             case "auth_ok" -> {
                 backoffSeconds = 1;
-                ws.sendText(json.writeValueAsString(
-                        Map.of("id", 1, "type", "subscribe_events", "event_type", "state_changed")), true);
+                messageIds.set(0);
+                send(ws, Map.of("id", messageIds.incrementAndGet(), "type", "subscribe_events", "event_type", "state_changed"));
                 // Buttons tapped on phone notifications, e.g. "I'm on it" on a critical alert (#101).
-                ws.sendText(json.writeValueAsString(
-                        Map.of("id", 2, "type", "subscribe_events", "event_type", NOTIFICATION_ACTION)), true);
+                send(ws, Map.of("id", messageIds.incrementAndGet(), "type", "subscribe_events", "event_type", NOTIFICATION_ACTION));
+                if (directory != EntityDirectory.NONE) {
+                    // Devices, areas and entities (#99): read now, and again whenever one of them changes.
+                    for (String update : REGISTRY_UPDATES) {
+                        send(ws, Map.of("id", messageIds.incrementAndGet(), "type", "subscribe_events", "event_type", update));
+                    }
+                    readRegistries(ws);
+                }
                 log.info("Home Assistant live updates connected");
                 liveConnection(true);
             }
@@ -410,17 +451,27 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
                 scheduleReconnect(AUTH_FAILED_RETRY_SECONDS);
             }
             case "result" -> {
+                Object id = msg.get("id");
+                String list = id instanceof Number n ? registryRequest(n.intValue()) : null;
                 if (Boolean.FALSE.equals(msg.get("success"))) {
-                    log.warn("Home Assistant refused the live-updates subscription: {}",
+                    log.warn("Home Assistant refused {}: {}", list != null ? list : "the live-updates subscription",
                             text(asMap(msg.get("error")).get("message")));
+                    if (list != null) registryFailed();
+                } else if (list != null) {
+                    registryAnswer(list, msg.get("result"));
                 }
             }
             case "event" -> {
                 Map<String, Object> event = asMap(msg.get("event"));
                 Map<String, Object> data = asMap(event.get("data"));
-                if (NOTIFICATION_ACTION.equals(text(event.get("event_type")))) {
+                String eventType = text(event.get("event_type"));
+                if (NOTIFICATION_ACTION.equals(eventType)) {
                     String action = text(data.get("action"));
                     if (!action.isEmpty()) actionSink.accept(new NotificationAction(action, Instant.now()));
+                    return;
+                }
+                if (REGISTRY_UPDATES.contains(eventType)) {
+                    registryChanged(ws);
                     return;
                 }
                 Map<String, Object> newState = asMap(data.get("new_state"));
@@ -430,6 +481,94 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
             }
             default -> { }
         }
+    }
+
+    /** Sends one message, after the previous one went out (a WebSocket sends one message at a time). */
+    private void send(WebSocket ws, Map<String, Object> message) {
+        String text = json.writeValueAsString(message);
+        synchronized (sendLock) {
+            lastSend = lastSend.handle((done, error) -> null).thenCompose(x -> {
+                CompletableFuture<WebSocket> sent = ws.sendText(text, true);
+                return sent != null ? sent : CompletableFuture.completedFuture(ws);
+            });
+        }
+    }
+
+    private final Object sendLock = new Object();
+    private CompletableFuture<?> lastSend = CompletableFuture.completedFuture(null);
+
+    // ---------------------------------------------------------------- device registries (#99)
+
+    /** Asks for the area, device and entity registries; {@link #registryAnswer} collects the three answers. */
+    private void readRegistries(WebSocket ws) {
+        synchronized (registryRequests) {
+            registryRequests.clear();
+            registryAnswers.clear();
+            for (String list : REGISTRY_LISTS) {
+                int id = messageIds.incrementAndGet();
+                registryRequests.put(id, list);
+                send(ws, Map.of("id", id, "type", list));
+            }
+        }
+    }
+
+    /** The registry list a result answers, or null for anything else (such as a subscription). */
+    private String registryRequest(int id) {
+        synchronized (registryRequests) {
+            return registryRequests.remove(id);
+        }
+    }
+
+    private void registryFailed() {
+        synchronized (registryRequests) {
+            registryRequests.clear();
+            registryAnswers.clear();
+        }
+    }
+
+    private void registryAnswer(String list, Object result) {
+        List<Map<String, Object>> rows = asList(result).stream().map(JsonValues::asMap).toList();
+        Map<String, List<Map<String, Object>>> complete = null;
+        synchronized (registryRequests) {
+            registryAnswers.put(list, rows);
+            if (registryAnswers.size() == REGISTRY_LISTS.size()) {
+                complete = new HashMap<>(registryAnswers);
+                registryAnswers.clear();
+            }
+        }
+        if (complete != null) {
+            Map<String, List<Map<String, Object>>> lists = complete;
+            inBackground(() -> syncDevices(lists));   // not on the WebSocket's thread: it reads the states too
+        }
+    }
+
+    /** With the three registries in, adds the states (for each entity's device class) and hands it all over. */
+    private void syncDevices(Map<String, List<Map<String, Object>>> lists) {
+        try {
+            List<Map<String, Object>> states = client.get().uri("/states").retrieve().body(STATES);
+            directory.sync(new RegistrySnapshot(lists.get(REGISTRY_LISTS.get(0)), lists.get(REGISTRY_LISTS.get(1)),
+                    lists.get(REGISTRY_LISTS.get(2)), states == null ? List.of() : states));
+        } catch (RuntimeException ex) {
+            log.warn("Home Assistant devices: could not read them ({}); trying again at the next change or reconnect",
+                    ex.getClass().getSimpleName());
+        }
+    }
+
+    /** A device, area or entity changed in Home Assistant: read the registries again, once the burst is over. */
+    private void registryChanged(WebSocket ws) {
+        if (directory == EntityDirectory.NONE || !registryReadPending.compareAndSet(false, true)) return;
+        Runnable read = () -> {
+            registryReadPending.set(false);
+            WebSocket current = socket != null ? socket : ws;   // after a reconnect, the new connection
+            if (running || reconnector == null) readRegistries(current);
+        };
+        if (reconnector == null) read.run();   // tests
+        else reconnector.schedule(read, REGISTRY_READ_DELAY_SECONDS, TimeUnit.SECONDS);
+    }
+
+    private void inBackground(Runnable task) {
+        if (reconnector == null) task.run();   // tests
+        else reconnector.execute(task);
     }
 
     private synchronized void onStateChanged(Map<String, Object> state) {
@@ -488,8 +627,9 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
 
     // ---------------------------------------------------------------- mapping
 
+    /** Recorded: matched by an include pattern or a reading of a confirmed device (#99), and not of a hidden device. */
     private boolean isIncluded(String entityId) {
-        return include.matches(entityId);
+        return !directory.hidden(entityId) && (include.matches(entityId) || directory.records(entityId));
     }
 
     /**
@@ -507,7 +647,7 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
         Map<String, Object> attrs = asMap(state.get("attributes"));
         String deviceClass = text(attrs.get("device_class"));
         String friendly = firstNonBlank(text(attrs.get("friendly_name")), entityId);
-        String device = deviceNames.getOrDefault(entityId, "");
+        String device = deviceNames.getOrDefault(entityId, "");   // Home Assistant's device name
 
         // "Refrigerator Fridge door" on device "Refrigerator" -> part "Fridge door"
         String part = !device.isEmpty() && friendly.toLowerCase(Locale.ROOT).startsWith(device.toLowerCase(Locale.ROOT))
@@ -517,6 +657,10 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
 
         String type = typeFor(domain, deviceClass, part);
         part = stripWords(part, deviceClass, type);   // "Fridge door" (contact) -> "Fridge"; "Machine state" -> ""
+        // A device Kudil knows (#99) is recorded under Kudil's name, and its only reading of a kind needs no part:
+        // "Laundry leak sensor", not "Laundry leak sensor/Water detected".
+        device = directory.deviceName(entityId).orElse(device);
+        if (directory.onlyReadingOfItsKind(entityId)) part = "";
         String deviceLabel = part.isEmpty() ? device : device + "/" + part;
         String configured = names.nameOf(entityId);   // e.g. "Back door" instead of "Backdoor openclose"
         if (configured != null) deviceLabel = configured;

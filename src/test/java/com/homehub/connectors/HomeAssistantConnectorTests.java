@@ -14,10 +14,12 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import com.homehub.events.Event;
+import com.homehub.homeassistant.EntityDirectory;
 import com.homehub.homeassistant.EntityNames;
 import com.homehub.homeassistant.HomeAssistantProperties;
 import com.homehub.homeassistant.HomeAssistantStatus;
 import com.homehub.homeassistant.NotificationAction;
+import com.homehub.homeassistant.RegistrySnapshot;
 import java.net.http.WebSocket;
 import java.time.Clock;
 import java.time.Duration;
@@ -139,6 +141,131 @@ class HomeAssistantConnectorTests {
         assertThat(saved).extracting(Event::device, Event::type, Event::value, Event::time).containsExactly(
                 tuple("Refrigerator/Fridge", "contact", "open", Instant.parse("2026-11-05T03:17:39Z")),
                 tuple("Refrigerator/Fridge", "contact", "closed", Instant.parse("2026-11-05T03:17:42Z")));
+    }
+
+    // ---------------------------------------------------------------- devices from the registries (#99)
+
+    /** A device directory the test controls; records each snapshot it is given. */
+    private static final class FakeDirectory implements EntityDirectory {
+        final java.util.Set<String> recorded = new java.util.HashSet<>(), hidden = new java.util.HashSet<>(),
+                only = new java.util.HashSet<>();
+        final java.util.Map<String, String> names = new java.util.HashMap<>();
+        final List<RegistrySnapshot> synced = new ArrayList<>();
+
+        @Override public boolean records(String entityId) { return recorded.contains(entityId); }
+        @Override public boolean hidden(String entityId) { return hidden.contains(entityId); }
+        @Override public java.util.Optional<String> deviceName(String entityId) { return java.util.Optional.ofNullable(names.get(entityId)); }
+        @Override public boolean onlyReadingOfItsKind(String entityId) { return only.contains(entityId); }
+        @Override public void sync(RegistrySnapshot snapshot) { synced.add(snapshot); }
+    }
+
+    private static List<String> sentTexts(WebSocket ws, int count) {
+        var sent = ArgumentCaptor.forClass(CharSequence.class);
+        verify(ws, times(count)).sendText(sent.capture(), eq(true));
+        return sent.getAllValues().stream().map(CharSequence::toString).toList();
+    }
+
+    @Test
+    void theRegistriesAreReadAtConnectAndAgainAfterAChange() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        String states = """
+                [{"entity_id":"binary_sensor.water_leak_detected","state":"off","attributes":{"device_class":"moisture"}}]""";
+        expectStates(server, states);   // with the first registry answers
+        expectStates(server, states);   // after the change
+        var connector = new HomeAssistantConnector(builder, PROPS, "lock.*", event -> { });
+        FakeDirectory directory = new FakeDirectory();
+        connector.useDirectory(directory);
+        WebSocket ws = mock(WebSocket.class);
+
+        connector.handleMessage(ws, "{\"type\":\"auth_ok\"}");
+        List<String> sent = sentTexts(ws, 8);
+        assertThat(sent.subList(2, 5)).allSatisfy(s -> assertThat(s).contains("subscribe_events"));
+        assertThat(String.join("\n", sent.subList(2, 5))).contains("\"id\":3", "\"id\":4", "\"id\":5",
+                "area_registry_updated", "device_registry_updated", "entity_registry_updated");
+        assertThat(sent.get(5)).contains("\"id\":6", "config/area_registry/list");
+        assertThat(sent.get(6)).contains("\"id\":7", "config/device_registry/list");
+        assertThat(sent.get(7)).contains("\"id\":8", "config/entity_registry/list");
+
+        // The answers, in any order; the subscriptions' own results are not registry answers.
+        connector.handleMessage(ws, "{\"id\":3,\"type\":\"result\",\"success\":true,\"result\":null}");
+        connector.handleMessage(ws, "{\"id\":7,\"type\":\"result\",\"success\":true,\"result\":[{\"id\":\"leak\",\"name\":\"Water Leak XS Sensor\"}]}");
+        connector.handleMessage(ws, "{\"id\":6,\"type\":\"result\",\"success\":true,\"result\":[{\"area_id\":\"kitchen\",\"name\":\"Kitchen\"}]}");
+        assertThat(directory.synced).as("not until all three are in").isEmpty();
+        connector.handleMessage(ws, "{\"id\":8,\"type\":\"result\",\"success\":true,\"result\":"
+                + "[{\"entity_id\":\"binary_sensor.water_leak_detected\",\"device_id\":\"leak\"}]}");
+        assertThat(directory.synced).hasSize(1);
+        RegistrySnapshot snapshot = directory.synced.get(0);
+        assertThat(snapshot.areas()).extracting(a -> a.get("name")).containsExactly("Kitchen");
+        assertThat(snapshot.devices()).extracting(d -> d.get("name")).containsExactly("Water Leak XS Sensor");
+        assertThat(snapshot.entities()).extracting(e -> e.get("device_id")).containsExactly("leak");
+        assertThat(snapshot.states()).extracting(s -> s.get("entity_id")).containsExactly("binary_sensor.water_leak_detected");
+
+        // A device paired in Home Assistant: the registries are read again, with higher message ids.
+        connector.handleMessage(ws, """
+                {"id":4,"type":"event","event":{"event_type":"device_registry_updated","data":{"action":"create","device_id":"x"}}}""");
+        List<String> again = sentTexts(ws, 11).subList(8, 11);
+        assertThat(String.join("\n", again)).contains("\"id\":9", "\"id\":10", "\"id\":11", "config/entity_registry/list");
+        for (int id = 9; id <= 11; id++) {
+            connector.handleMessage(ws, "{\"id\":" + id + ",\"type\":\"result\",\"success\":true,\"result\":[]}");
+        }
+        assertThat(directory.synced).hasSize(2);
+        server.verify();
+    }
+
+    @Test
+    void aRefusedRegistryListIsDroppedUntilTheNextChange() {
+        var connector = new HomeAssistantConnector(RestClient.builder(), PROPS, "lock.*", event -> { });
+        FakeDirectory directory = new FakeDirectory();
+        connector.useDirectory(directory);
+        WebSocket ws = mock(WebSocket.class);
+        connector.handleMessage(ws, "{\"type\":\"auth_ok\"}");
+
+        connector.handleMessage(ws, "{\"id\":6,\"type\":\"result\",\"success\":true,\"result\":[]}");
+        connector.handleMessage(ws, "{\"id\":7,\"type\":\"result\",\"success\":false,\"error\":{\"message\":\"Unauthorized\"}}");
+        connector.handleMessage(ws, "{\"id\":8,\"type\":\"result\",\"success\":true,\"result\":[]}");
+
+        assertThat(directory.synced).isEmpty();
+    }
+
+    @Test
+    void withoutADirectoryNoRegistryIsRead() {
+        var connector = new HomeAssistantConnector(RestClient.builder(), PROPS, "lock.*", event -> { });
+        WebSocket ws = mock(WebSocket.class);
+        connector.handleMessage(ws, "{\"type\":\"auth_ok\"}");
+        assertThat(sentTexts(ws, 2)).noneMatch(s -> s.contains("registry"));
+    }
+
+    @Test
+    void confirmedDevicesAreRecordedUnderKudilsNameAndHiddenOnesNeverAre() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        expectStates(server, """
+                [{"entity_id":"binary_sensor.water_leak_xs_sensor_water_leak_detected","state":"on",
+                  "attributes":{"device_class":"moisture","friendly_name":"Water Leak XS Sensor Water leak detected"}},
+                 {"entity_id":"binary_sensor.kitchen_refrigerator_fridge_door","state":"off",
+                  "attributes":{"device_class":"door","friendly_name":"Refrigerator Fridge door"}},
+                 {"entity_id":"lock.front_door","state":"locked","attributes":{"friendly_name":"Front door"}},
+                 {"entity_id":"sensor.new_thing","state":"3","attributes":{"friendly_name":"New thing"}}]
+                """);
+        server.expect(requestTo(URL + "/api/template")).andRespond(withSuccess("""
+                binary_sensor.water_leak_xs_sensor_water_leak_detected|Water Leak XS Sensor
+                binary_sensor.kitchen_refrigerator_fridge_door|Refrigerator
+                lock.front_door|Front door
+                """, MediaType.TEXT_PLAIN));
+        var connector = new HomeAssistantConnector(builder, PROPS, "binary_sensor.*_door,lock.*", null);
+        FakeDirectory directory = new FakeDirectory();
+        directory.recorded.add("binary_sensor.water_leak_xs_sensor_water_leak_detected");   // a confirmed device
+        directory.only.add("binary_sensor.water_leak_xs_sensor_water_leak_detected");
+        directory.names.put("binary_sensor.water_leak_xs_sensor_water_leak_detected", "Laundry leak sensor");
+        directory.names.put("binary_sensor.kitchen_refrigerator_fridge_door", "Refrigerator");   // one of two doors
+        directory.hidden.add("lock.front_door");   // hidden, although "lock.*" matches it
+        connector.useDirectory(directory);
+
+        assertThat(connector.poll()).extracting(Event::device, Event::type, Event::value).containsExactlyInAnyOrder(
+                tuple("Laundry leak sensor", "leak", "wet"),
+                tuple("Refrigerator/Fridge", "contact", "closed"));   // unchanged; the new sensor isn't confirmed
+        server.verify();
     }
 
     @Test
