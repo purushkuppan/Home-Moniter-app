@@ -15,6 +15,9 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * @param maxRepeats   after this many repeats it stops (it stays on the dashboard until the problem ends)
  * @param escalateAfter when nobody has answered by then, it also goes to {@code escalateTo}
  * @param escalateTo   more Home Assistant notify actions (e.g. a relative's phone); empty: no escalation
+ * @param speakOn      Android phones (notify actions) that also hear each critical alert spoken at full alarm volume
+ *                     (#150): the notification alone may sound like any other. Not for iPhones, where it would show
+ *                     as a plain "TTS" message
  */
 @ConfigurationProperties("homehub.alerts.critical")
 public record CriticalAlertProperties(
@@ -22,7 +25,8 @@ public record CriticalAlertProperties(
         @DefaultValue("5m") Duration repeatEvery,
         @DefaultValue("24") Integer maxRepeats,
         @DefaultValue("10m") Duration escalateAfter,
-        List<String> escalateTo) {
+        List<String> escalateTo,
+        List<String> speakOn) {
 
     public CriticalAlertProperties {
         kinds = kinds == null ? List.of("leak") : kinds.stream().map(String::trim).filter(s -> !s.isEmpty()).toList();
@@ -31,10 +35,11 @@ public record CriticalAlertProperties(
         if (escalateAfter == null || escalateAfter.isNegative()) escalateAfter = Duration.ofMinutes(10);
         escalateTo = escalateTo == null ? List.of()
                 : escalateTo.stream().map(String::trim).filter(s -> !s.isEmpty()).toList();
+        speakOn = speakOn == null ? List.of() : speakOn.stream().map(String::trim).filter(s -> !s.isEmpty()).toList();
     }
 
     /** The defaults: water leaks are critical, repeated every 5 minutes, nobody else to escalate to. */
     public static CriticalAlertProperties defaults() {
-        return new CriticalAlertProperties(null, null, null, null, null);
+        return new CriticalAlertProperties(null, null, null, null, null, null);
     }
 }

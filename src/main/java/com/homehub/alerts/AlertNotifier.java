@@ -37,18 +37,26 @@ public class AlertNotifier {
     private final RestClient client;
     private final boolean configured;
     private final List<String> services;
+    private final List<String> speakOn;   // Android phones that also hear critical alerts spoken (#150)
     private final String link;
 
     @Autowired
-    public AlertNotifier(HomeAssistantProperties homeAssistant, AlertProperties alerts) {
-        this(RestClient.builder().requestFactory(timeouts()), homeAssistant, alerts);
+    public AlertNotifier(HomeAssistantProperties homeAssistant, AlertProperties alerts, CriticalAlertProperties critical) {
+        this(RestClient.builder().requestFactory(timeouts()), homeAssistant, alerts, critical);
     }
 
-    /** Lets tests supply a builder bound to a mock server. */
+    /** Lets tests supply a builder bound to a mock server. Nothing is spoken. */
     AlertNotifier(RestClient.Builder builder, HomeAssistantProperties homeAssistant, AlertProperties alerts) {
+        this(builder, homeAssistant, alerts, CriticalAlertProperties.defaults());
+    }
+
+    /** Lets tests supply a builder bound to a mock server and the phones that speak critical alerts. */
+    AlertNotifier(RestClient.Builder builder, HomeAssistantProperties homeAssistant, AlertProperties alerts,
+                  CriticalAlertProperties critical) {
         this.configured = homeAssistant.isConfigured();
         this.link = alerts.link();
         this.services = targets(alerts.sendTo(), "homehub.alerts.send-to");
+        this.speakOn = targets(critical.speakOn(), "homehub.alerts.critical.speak-on");
         if (configured) {
             String token = homeAssistant.token().trim();
             builder.baseUrl(homeAssistant.url().trim().replaceAll("/+$", "") + "/api")
@@ -78,8 +86,23 @@ public class AlertNotifier {
             if (post(service, Map.of("title", TITLE, "message", alert.message(), "data", data(alert, critical, service)))) {
                 sent++;
             }
+            if (critical && speakOn.contains(service)) speak(service, alert);
         }
         return sent;
+    }
+
+    /**
+     * Speaks a critical alert on an Android phone at full alarm volume (#150). The Companion app turns the alarm volume
+     * up to the maximum, speaks, and turns it back, also on silent: unlike a notification sound, which some phones play
+     * like any other however the channel is set. Sent right after the notification, which carries the button.
+     */
+    private void speak(String service, Alert alert) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("tts_text", "Kudil alert. " + alert.message());
+        data.put("media_stream", "alarm_stream_max");
+        data.put("ttl", 0);              // delivered at once, even while the phone sleeps
+        data.put("priority", "high");
+        post(service, Map.of("message", "TTS", "data", data));
     }
 
     /** Removes the alert's notification from these phones, e.g. once someone else said "I'm on it". Never throws. */

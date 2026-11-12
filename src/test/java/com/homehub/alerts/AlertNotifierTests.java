@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
+import org.springframework.test.json.JsonCompareMode;
 import org.springframework.test.web.client.ExpectedCount;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
@@ -85,6 +86,40 @@ class AlertNotifierTests {
                 "Water leak in the kitchen", Instant.parse("2026-11-10T18:00:00Z")), true)).isEqualTo(2);
         notifier.send(new Alert("leak:kitchen leak sensor", Level.CLEARED, "Kitchen leak sensor",
                 "Kitchen leak sensor is dry again.", Instant.parse("2026-11-10T18:10:00Z")));
+
+        server.verify();
+    }
+
+    @Test
+    void onSpeakingPhonesACriticalAlertIsAlsoSpokenAtFullAlarmVolume() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        // The Android phone: the notification with its button, then the spoken alert.
+        server.expect(ExpectedCount.once(), requestTo(URL + "/api/services/notify/mobile_app_android"))
+                .andExpect(jsonPath("$.data.channel").value("alarm_stream"))
+                .andRespond(withSuccess());
+        server.expect(ExpectedCount.once(), requestTo(URL + "/api/services/notify/mobile_app_android"))
+                .andExpect(content().json("""
+                        {"message":"TTS","data":{"tts_text":"Kudil alert. Water leak in the kitchen",
+                         "media_stream":"alarm_stream_max","ttl":0,"priority":"high"}}""", JsonCompareMode.STRICT))
+                .andRespond(withSuccess());
+        // The iPhone: only the notification (a "TTS" message would show as text there).
+        server.expect(ExpectedCount.once(), requestTo(URL + "/api/services/notify/mobile_app_iphone"))
+                .andExpect(jsonPath("$.message").value("Water leak in the kitchen"))
+                .andRespond(withSuccess());
+        // An ordinary alert is never spoken.
+        server.expect(ExpectedCount.once(), requestTo(URL + "/api/services/notify/mobile_app_android"))
+                .andExpect(jsonPath("$.message").value("Fridge door has been open for 1 minute"))
+                .andRespond(withSuccess());
+        server.expect(ExpectedCount.once(), requestTo(URL + "/api/services/notify/mobile_app_iphone"))
+                .andRespond(withSuccess());
+        AlertNotifier notifier = new AlertNotifier(builder, new HomeAssistantProperties(URL, "secret"),
+                settings(List.of("notify.mobile_app_android", "notify.mobile_app_iphone"), ""),
+                new CriticalAlertProperties(null, null, null, null, null, List.of("notify.mobile_app_android")));
+
+        assertThat(notifier.send(new Alert("leak:kitchen leak sensor", Level.PROBLEM, "Kitchen leak sensor",
+                "Water leak in the kitchen", Instant.parse("2026-11-12T09:00:00Z")), true)).as("phones").isEqualTo(2);
+        notifier.send(DOOR);
 
         server.verify();
     }

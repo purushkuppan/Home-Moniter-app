@@ -222,7 +222,7 @@ class EventControllerTests {
 
     @Test
     void criticalAlertsCanBeAnsweredAndTestedFromTheDashboard() throws Exception {
-        String page = get("/");
+        String page = get("/").replace("\r\n", "\n");   // the same on a Windows checkout (CRLF) as in CI
         // "I'm on it" on an unanswered critical alert; who answered once someone did.
         assertThat(page).contains("if (a.critical && !a.acknowledgedBy) {", "el('button', 'btn small', 'I\\'m on it')",
                 "'On it: ' + a.acknowledgedBy", "fetch('/api/alerts/ack'");

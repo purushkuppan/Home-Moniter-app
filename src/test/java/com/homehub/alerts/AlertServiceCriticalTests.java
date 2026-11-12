@@ -62,7 +62,7 @@ class AlertServiceCriticalTests {
                 "", Map.of(), Map.of(), null, List.of(), Map.of(), null, null, null, null, null, null,
                 Map.of("Kitchen leak sensor", "Water leak in the kitchen"));
         CriticalAlertProperties critical = new CriticalAlertProperties(List.of("leak"), Duration.ofMinutes(5), 24,
-                Duration.ofMinutes(10), List.of("notify.mobile_app_neighbour"));
+                Duration.ofMinutes(10), List.of("notify.mobile_app_neighbour"), List.of());
         service = new AlertService(alerts, new BackupProperties("", null), critical, repository, notifier, weather, clock);
         return service;
     }
