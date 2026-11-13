@@ -200,6 +200,18 @@ One-time phone setup, then check it with **Settings → Alerts → Send test** (
   missed while Kudil was restarting runs as soon as it is back, up to 3 hours late, and a restart never repeats
   one. Limits are in Home Assistant's units (°F and inches here; with °C and mm use e.g. `0` and `2`).
 
+## Z-Wave, directly (read-only for now)
+Kudil talks to the **Z-Wave JS server** itself (#134, [ADR 12](docs/adr/0012-direct-device-connections.md)), next to
+Home Assistant: the server inside the `zwave-js-ui` container takes several clients at once. For now Kudil only
+reads: it connects, agrees on a fixed API schema (35), and keeps the node list. Events and control follow in #156,
+adding devices in #135–#137.
+
+- Setting: `homehub.zwave.url` (`ws://127.0.0.1:3000` on the hub; empty = off).
+- **`GET /api/status`** shows the connection: connected or not and since when, the server and driver versions, and
+  each node's ID, name, room, alive/asleep/dead and whether its interview is done.
+- When the container restarts, Kudil reconnects after 1, 2, 4 … up to 60 seconds.
+- Nothing about Z-Wave security keys or DSKs is kept or logged.
+
 ## Devices
 
 Kudil reads Home Assistant's devices, rooms (areas) and entities over its live connection, at start and again a
