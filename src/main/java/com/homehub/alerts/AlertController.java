@@ -1,7 +1,12 @@
 package com.homehub.alerts;
 
+import com.homehub.ApiDocs;
 import com.homehub.controls.ControlPin;
 import com.homehub.weather.WarningService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -30,6 +35,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/alerts")
+@Tag(name = "Alerts", description = "Problems going on right now, \"I'm on it\", and the test alarm")
 public class AlertController {
 
     /** One problem going on, as the dashboard shows it. */
@@ -56,6 +62,8 @@ public class AlertController {
     }
 
     @GetMapping
+    @Operation(summary = "Problems going on right now, oldest first",
+            description = "With whether each is critical and who said \"I'm on it\". Empty when alerts are switched off.")
     public List<ActiveAlert> active() {
         List<Alert> all = new ArrayList<>();
         AlertService service = alerts.getIfAvailable();
@@ -75,6 +83,9 @@ public class AlertController {
     }
 
     @PostMapping("/ack")
+    @Operation(summary = "\"I'm on it\" for a critical alert",
+            description = "Body `{\"key\": \"...\"}`. No PIN: it only stops the repeats; the alert stays until the "
+                    + "problem is over. 409 when the alert is over or someone already answered.")
     public ResponseEntity<Map<String, Object>> acknowledge(@RequestBody(required = false) AckRequest request) {
         AlertService service = alerts.getIfAvailable();
         if (service == null) return message(HttpStatus.NOT_FOUND, "Alerts are switched off.");
@@ -88,7 +99,10 @@ public class AlertController {
     }
 
     @PostMapping("/test")
-    public ResponseEntity<Map<String, Object>> test(@RequestHeader(value = PIN_HEADER, required = false) String attempt) {
+    @Operation(summary = "Ring every phone with a test critical alert",
+            description = "Sounds an alarm on the family's phones, even on silent. Needs the household PIN.",
+            security = @SecurityRequirement(name = ApiDocs.PIN))
+    public ResponseEntity<Map<String, Object>> test(@Parameter(hidden = true) @RequestHeader(value = PIN_HEADER, required = false) String attempt) {
         switch (pin.check(attempt)) {
             case OK -> { }
             case WRONG -> { return message(HttpStatus.UNAUTHORIZED, "Wrong PIN."); }

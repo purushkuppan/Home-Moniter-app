@@ -1,5 +1,10 @@
 package com.homehub.controls;
 
+import com.homehub.ApiDocs;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -27,6 +32,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/controls")
+@Tag(name = "Controls", description = "Switch plugs, locks and thermostats through Home Assistant (household PIN)")
 public class ControlController {
 
     static final String PIN_HEADER = "X-HomeHub-Pin";
@@ -42,6 +48,8 @@ public class ControlController {
     public record CommandRequest(String value) {}
 
     @GetMapping
+    @Operation(summary = "What can be controlled, with current values",
+            description = "No PIN needed to look. `enabled` is false, with a `reason`, when controls are off or no PIN is set.")
     public Map<String, Object> list() {
         Map<String, Object> view = new LinkedHashMap<>();
         ControlService controls = service.getIfAvailable();
@@ -69,14 +77,21 @@ public class ControlController {
     }
 
     @PostMapping("/unlock")
-    public ResponseEntity<Map<String, Object>> unlock(@RequestHeader(value = PIN_HEADER, required = false) String attempt) {
+    @Operation(summary = "Check the household PIN",
+            description = "401 wrong PIN, 429 too many wrong PINs (locked for a while), 403 no PIN set on the hub.",
+            security = @SecurityRequirement(name = ApiDocs.PIN))
+    public ResponseEntity<Map<String, Object>> unlock(@Parameter(hidden = true) @RequestHeader(value = PIN_HEADER, required = false) String attempt) {
         requirePin(attempt);
         return ResponseEntity.ok(Map.of("message", "Controls unlocked."));
     }
 
     @PostMapping("/{entityId}")
+    @Operation(summary = "Change a device",
+            description = "Body `{\"value\": \"...\"}`: a value the control offers (see GET /api/controls). Needs the "
+                    + "household PIN; 404 when controls are turned off.",
+            security = @SecurityRequirement(name = ApiDocs.PIN))
     public ResponseEntity<Map<String, Object>> command(@PathVariable String entityId,
-                                                       @RequestHeader(value = PIN_HEADER, required = false) String attempt,
+                                                       @Parameter(hidden = true) @RequestHeader(value = PIN_HEADER, required = false) String attempt,
                                                        @RequestBody(required = false) CommandRequest request) {
         ControlService controls = service.getIfAvailable();
         if (controls == null) {

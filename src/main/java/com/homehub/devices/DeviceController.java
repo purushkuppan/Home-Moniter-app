@@ -1,9 +1,14 @@
 package com.homehub.devices;
 
+import com.homehub.ApiDocs;
 import com.homehub.alerts.AlertProperties;
 import com.homehub.alerts.DefaultAlertProperties;
 import com.homehub.controls.ControlPin;
 import com.homehub.events.EventRepository;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -33,6 +38,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/devices")
+@Tag(name = "Devices", description = "The Devices list: what Kudil watches, and each device's alert choices")
 public class DeviceController {
 
     /** One device, as the dashboard shows it. */
@@ -71,6 +77,7 @@ public class DeviceController {
     }
 
     @GetMapping
+    @Operation(summary = "Every device Kudil knows, new ones to review first")
     public List<DeviceView> list() {
         List<DeviceView> views = new ArrayList<>();
         for (Device.Status status : List.of(Device.Status.NEW, Device.Status.CONFIRMED, Device.Status.HIDDEN)) {
@@ -80,8 +87,13 @@ public class DeviceController {
     }
 
     @PostMapping("/{id}")
+    @Operation(summary = "Confirm, rename, hide or show a device, or change one of its alert choices",
+            description = "Body `action`: `confirm` (with `name`), `hide`, `show`, `open-for` (with `minutes`; none = "
+                    + "the default) or `setting` (with `key` and `value`). Needs the household PIN, since it decides "
+                    + "what is watched.",
+            security = @SecurityRequirement(name = ApiDocs.PIN))
     public ResponseEntity<Map<String, Object>> choose(@PathVariable long id, @RequestBody(required = false) Choice choice,
-                                                      @RequestHeader(value = PIN_HEADER, required = false) String attempt) {
+                                                      @Parameter(hidden = true) @RequestHeader(value = PIN_HEADER, required = false) String attempt) {
         switch (pin.check(attempt)) {
             case OK -> { }
             case WRONG -> { return message(HttpStatus.UNAUTHORIZED, "Wrong PIN."); }
