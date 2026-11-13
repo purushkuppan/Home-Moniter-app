@@ -209,7 +209,7 @@ final class AlertRules {
                 String alarmKey = e.type() + ":" + device;
                 if (value.equals("detected") && !alarms.containsKey(alarmKey)) {
                     Watch w = new Watch(e.device(), time);
-                    w.message = what + " detected: " + name(e.device()) + ". Get everyone out.";
+                    w.message = what + " detected: " + name(e.device()) + ".";
                     alarms.put(alarmKey, w);
                     return List.of(new Alert(alarmKey, Level.PROBLEM, e.device(), w.message, time));
                 }
@@ -225,7 +225,7 @@ final class AlertRules {
             case "lock" -> {
                 if (value.equals("jammed") && !jammed.containsKey(device)) {
                     Watch w = new Watch(e.device(), time);
-                    w.message = name(e.device()) + " is jammed. Check that it is fully locked.";
+                    w.message = name(e.device()) + " is jammed.";
                     jammed.put(device, w);
                     return List.of(new Alert("lock:" + device, Level.PROBLEM, e.device(), w.message, time));
                 }
@@ -319,7 +319,7 @@ final class AlertRules {
         Watch w = new Watch(device, time);
         w.reading = reading;
         w.lastSent = time;
-        w.message = name(device) + " battery is low" + (reading.isEmpty() ? "" : ": " + reading) + ". Replace it soon.";
+        w.message = name(device) + " battery is low" + (reading.isEmpty() ? "" : ": " + reading) + ".";
         lowBatteries.put(key, w);
         return List.of(new Alert("battery:" + key, Level.NOTICE, device, w.message, time));
     }
@@ -362,7 +362,7 @@ final class AlertRules {
             if (w.lastSent != null && !now.isBefore(w.lastSent.plus(BATTERY_REMINDER))) {
                 w.lastSent = now;
                 due.add(new Alert("battery:" + device, Level.NOTICE, w.device, name(w.device) + " battery is still low"
-                        + (w.reading.isEmpty() ? "" : ": " + w.reading) + ". Replace it soon.", now));
+                        + (w.reading.isEmpty() ? "" : ": " + w.reading) + ".", now));
             }
         });
         Watch lost = connectionLost;

@@ -83,7 +83,7 @@ public class AlertNotifier {
         if (!configured) return 0;
         int sent = 0;
         for (String service : phones) {
-            if (post(service, Map.of("title", TITLE, "message", alert.message(), "data", data(alert, critical, service)))) {
+            if (post(service, Map.of("title", TITLE, "message", NextSteps.withStep(alert), "data", data(alert, critical, service)))) {
                 sent++;
             }
             if (critical && speakOn.contains(service)) speak(service, alert);
@@ -98,7 +98,7 @@ public class AlertNotifier {
      */
     private void speak(String service, Alert alert) {
         Map<String, Object> data = new LinkedHashMap<>();
-        data.put("tts_text", "Kudil alert. " + alert.message());
+        data.put("tts_text", "Kudil alert. " + NextSteps.spoken(alert));
         data.put("media_stream", "alarm_stream_max");
         data.put("ttl", 0);              // delivered at once, even while the phone sleeps
         data.put("priority", "high");

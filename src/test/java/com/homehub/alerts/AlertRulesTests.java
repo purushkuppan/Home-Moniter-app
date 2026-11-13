@@ -268,10 +268,10 @@ class AlertRulesTests {
         assertThat(rules.onEvent(event("Leak sensor", "battery", "35 %", sec(0)))).isEmpty();
         assertThat(rules.onEvent(event("Leak sensor", "battery", "20 %", sec(60))))
                 .extracting(Alert::key, Alert::level, Alert::message)
-                .containsExactly(tuple("battery:leak sensor", Level.NOTICE, "Leak sensor battery is low: 20%. Replace it soon."));
+                .containsExactly(tuple("battery:leak sensor", Level.NOTICE, "Leak sensor battery is low: 20%."));
         assertThat(rules.onEvent(event("Leak sensor", "battery", "12 %", sec(120)))).as("not again").isEmpty();
         assertThat(rules.onEvent(event("Leak sensor", "battery", "unavailable", sec(130)))).isEmpty();
-        assertThat(rules.active()).extracting(Alert::message).containsExactly("Leak sensor battery is low: 20%. Replace it soon.");
+        assertThat(rules.active()).extracting(Alert::message).containsExactly("Leak sensor battery is low: 20%.");
     }
 
     @Test
@@ -280,7 +280,7 @@ class AlertRulesTests {
         rules.onEvent(event("Leak sensor", "battery", "11 %", Duration.ofDays(3)));
         assertThat(rules.check(T0.plus(Duration.ofDays(6)))).isEmpty();
         assertThat(rules.check(T0.plus(Duration.ofDays(7)))).extracting(Alert::key, Alert::level, Alert::message)
-                .containsExactly(tuple("battery:leak sensor", Level.NOTICE, "Leak sensor battery is still low: 11%. Replace it soon."));
+                .containsExactly(tuple("battery:leak sensor", Level.NOTICE, "Leak sensor battery is still low: 11%."));
         assertThat(rules.check(T0.plus(Duration.ofDays(10)))).as("not again for a week").isEmpty();
         assertThat(rules.check(T0.plus(Duration.ofDays(14)))).hasSize(1);
         rules.onEvent(event("Leak sensor", "battery", "100 %", Duration.ofDays(15)));
@@ -301,7 +301,7 @@ class AlertRulesTests {
     @Test
     void aBatterySensorThatOnlySaysLowWorksToo() {
         assertThat(rules.onEvent(event("Garage/Door sensor", "battery", "on", sec(0)))).extracting(Alert::message)
-                .containsExactly("Door sensor battery is low. Replace it soon.");
+                .containsExactly("Door sensor battery is low.");
         assertThat(rules.onEvent(event("Garage/Door sensor", "battery", "off", sec(60)))).extracting(Alert::message)
                 .containsExactly("Door sensor battery is fine again.");
     }
@@ -311,7 +311,7 @@ class AlertRulesTests {
         rules.seed(List.of(event("Leak sensor", "battery", "15 %", sec(0)),
                 event("Leak sensor", "alert", "Leak sensor battery is low: 15%. Replace it soon.", sec(0))));
 
-        assertThat(rules.active()).extracting(Alert::message).containsExactly("Leak sensor battery is low: 15%. Replace it soon.");
+        assertThat(rules.active()).extracting(Alert::message).containsExactly("Leak sensor battery is low: 15%.");
         assertThat(rules.onEvent(event("Leak sensor", "battery", "14 %", sec(60)))).isEmpty();
         assertThat(rules.check(T0.plus(Duration.ofHours(1)))).isEmpty();
     }
@@ -435,10 +435,10 @@ class AlertRulesTests {
         AlertRules rules = withDefaults(Map.of());
         assertThat(rules.onEvent(at("Hall smoke alarm", "smoke", "clear", NOON))).isEmpty();
         assertThat(rules.onEvent(at("Hall smoke alarm", "smoke", "detected", NOON))).extracting(Alert::key, Alert::level, Alert::message)
-                .containsExactly(tuple("smoke:hall smoke alarm", Level.PROBLEM, "Smoke detected: Hall smoke alarm. Get everyone out."));
+                .containsExactly(tuple("smoke:hall smoke alarm", Level.PROBLEM, "Smoke detected: Hall smoke alarm."));
         assertThat(rules.onEvent(at("Hall smoke alarm", "smoke", "detected", NOON.plus(Duration.ofMinutes(1))))).as("once").isEmpty();
         assertThat(rules.onEvent(at("Hall CO alarm", "co", "detected", NOON))).extracting(Alert::key, Alert::message)
-                .containsExactly(tuple("co:hall co alarm", "Carbon monoxide detected: Hall CO alarm. Get everyone out."));
+                .containsExactly(tuple("co:hall co alarm", "Carbon monoxide detected: Hall CO alarm."));
         assertThat(rules.active()).hasSize(2);
 
         assertThat(rules.onEvent(at("Hall smoke alarm", "smoke", "clear", NOON.plus(Duration.ofMinutes(4)))))
@@ -452,7 +452,7 @@ class AlertRulesTests {
         AlertRules rules = withDefaults(Map.of());
         assertThat(rules.onEvent(at("Front door lock", "lock", "locked", NOON))).isEmpty();
         assertThat(rules.onEvent(at("Front door lock", "lock", "jammed", NOON))).extracting(Alert::level, Alert::message)
-                .containsExactly(tuple(Level.PROBLEM, "Front door lock is jammed. Check that it is fully locked."));
+                .containsExactly(tuple(Level.PROBLEM, "Front door lock is jammed."));
         assertThat(rules.onEvent(at("Front door lock", "lock", "locked", NOON.plus(Duration.ofMinutes(2)))))
                 .extracting(Alert::level, Alert::message)
                 .containsExactly(tuple(Level.CLEARED, "Front door lock works again: locked."));

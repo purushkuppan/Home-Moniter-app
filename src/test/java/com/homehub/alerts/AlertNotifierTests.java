@@ -42,7 +42,7 @@ class AlertNotifierTests {
                     .andExpect(method(HttpMethod.POST))
                     .andExpect(header("Authorization", "Bearer secret"))
                     .andExpect(content().json("""
-                            {"title":"Kudil","message":"Fridge door has been open for 1 minute",
+                            {"title":"Kudil","message":"Fridge door has been open for 1 minute\\nClose it and check that nothing blocks the door.",
                              "data":{"tag":"homehub-door:refrigerator/fridge","group":"homehub",
                                      "url":"http://hub:8080","clickAction":"http://hub:8080"}}"""))
                     .andRespond(withSuccess());
@@ -62,7 +62,7 @@ class AlertNotifierTests {
         for (String phone : List.of("mobile_app_phone", "mobile_app_amma")) {
             server.expect(ExpectedCount.once(), requestTo(URL + "/api/services/notify/" + phone))
                     .andExpect(content().json("""
-                            {"title":"Kudil","message":"Water leak in the kitchen",
+                            {"title":"Kudil","message":"Water leak in the kitchen\\nTurn off the water at the main valve, then dry the floor and find where it comes from.",
                              "data":{"tag":"homehub-leak:kitchen leak sensor","priority":"high","ttl":0,
                                      "channel":"alarm_stream",
                                      "push":{"sound":{"name":"default","critical":1,"volume":1.0},
@@ -100,16 +100,16 @@ class AlertNotifierTests {
                 .andRespond(withSuccess());
         server.expect(ExpectedCount.once(), requestTo(URL + "/api/services/notify/mobile_app_android"))
                 .andExpect(content().json("""
-                        {"message":"TTS","data":{"tts_text":"Kudil alert. Water leak in the kitchen",
+                        {"message":"TTS","data":{"tts_text":"Kudil alert. Water leak in the kitchen. Turn off the water at the main valve, then dry the floor and find where it comes from.",
                          "media_stream":"alarm_stream_max","ttl":0,"priority":"high"}}""", JsonCompareMode.STRICT))
                 .andRespond(withSuccess());
         // The iPhone: only the notification (a "TTS" message would show as text there).
         server.expect(ExpectedCount.once(), requestTo(URL + "/api/services/notify/mobile_app_iphone"))
-                .andExpect(jsonPath("$.message").value("Water leak in the kitchen"))
+                .andExpect(jsonPath("$.message").value("Water leak in the kitchen\nTurn off the water at the main valve, then dry the floor and find where it comes from."))
                 .andRespond(withSuccess());
         // An ordinary alert is never spoken.
         server.expect(ExpectedCount.once(), requestTo(URL + "/api/services/notify/mobile_app_android"))
-                .andExpect(jsonPath("$.message").value("Fridge door has been open for 1 minute"))
+                .andExpect(jsonPath("$.message").value("Fridge door has been open for 1 minute\nClose it and check that nothing blocks the door."))
                 .andRespond(withSuccess());
         server.expect(ExpectedCount.once(), requestTo(URL + "/api/services/notify/mobile_app_iphone"))
                 .andRespond(withSuccess());

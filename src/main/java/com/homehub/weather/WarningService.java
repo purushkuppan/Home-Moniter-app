@@ -198,20 +198,12 @@ public class WarningService {
         }
     }
 
-    /** "Tornado Warning for the house until 7:45 PM. Go to your safe room now." */
+    /** "Tornado Warning for the house until 7:45 PM." What to do comes with the alert (NextSteps, #161). */
     String message(WeatherWarning w) {
         StringBuilder m = new StringBuilder(w.event()).append(" for the house");
         if (w.ends() != null) m.append(" until ").append(when(w.ends()));
         m.append('.');
-        String advice = switch (w.event()) {
-            case "Tornado Warning", "Tornado Emergency" -> "Go to your safe room now.";
-            case "Severe Thunderstorm Warning" -> "Stay inside, away from windows.";
-            case "Flash Flood Warning", "Flash Flood Emergency" -> "Never drive through flooded roads.";
-            case "Extreme Wind Warning" -> "Take shelter in an inside room.";
-            case "Hurricane Warning", "Storm Surge Warning" -> "Follow local evacuation orders.";
-            default -> "";
-        };
-        if (!advice.isEmpty()) m.append(' ').append(advice);
+        // What to do is the alert's next step (NextSteps, #161); hail depends on the warning, so it stays here.
         if (w.hailInches() != null) {
             m.append(" Hail up to ").append(String.format(Locale.ROOT, "%.2f", w.hailInches()).replaceAll("0+$", "").replaceAll("\\.$", ""))
                     .append(" in: move the cars into the garage.");

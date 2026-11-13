@@ -38,8 +38,8 @@ import org.springframework.web.bind.annotation.RestController;
 @Tag(name = "Alerts", description = "Problems going on right now, \"I'm on it\", and the test alarm")
 public class AlertController {
 
-    /** One problem going on, as the dashboard shows it. */
-    public record ActiveAlert(String key, Alert.Level level, String device, String message, Instant time,
+    /** One problem going on, as the dashboard shows it, with what to do next (#161), or null. */
+    public record ActiveAlert(String key, Alert.Level level, String device, String message, String nextStep, Instant time,
                               boolean critical, String acknowledgedBy, Instant acknowledgedAt) {
     }
 
@@ -75,7 +75,7 @@ public class AlertController {
         for (Alert a : all) {
             var ack = service == null ? java.util.Optional.<CriticalAlerts.Ack>empty() : service.acknowledgement(a.key());
             boolean critical = service != null && (service.waitingForAnswer(a.key()) || ack.isPresent());
-            active.add(new ActiveAlert(a.key(), a.level(), a.device(), a.message(), a.time(), critical,
+            active.add(new ActiveAlert(a.key(), a.level(), a.device(), a.message(), NextSteps.of(a).orElse(null), a.time(), critical,
                     ack.map(CriticalAlerts.Ack::who).orElse(null), ack.map(CriticalAlerts.Ack::at).orElse(null)));
         }
         active.sort(Comparator.comparing(ActiveAlert::time));
