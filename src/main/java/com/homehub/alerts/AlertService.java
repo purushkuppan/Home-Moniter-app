@@ -129,6 +129,14 @@ public class AlertService {
         }
     }
 
+    /**
+     * Alerts decided elsewhere, such as official weather warnings (#106): stored, sent to phones (critical ones ring
+     * and repeat until answered), like the alerts Kudil raises itself.
+     */
+    public void report(List<Alert> alerts) {
+        work(() -> raise(alerts));
+    }
+
     /** Problems that were reported and are still going on, for the dashboard banner. */
     public List<Alert> active() {
         List<Alert> active = new ArrayList<>(rules.active());

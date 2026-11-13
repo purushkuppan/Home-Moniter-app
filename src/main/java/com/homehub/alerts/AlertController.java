@@ -1,6 +1,7 @@
 package com.homehub.alerts;
 
 import com.homehub.controls.ControlPin;
+import com.homehub.weather.WarningService;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -43,25 +44,32 @@ public class AlertController {
 
     private final ObjectProvider<AlertService> alerts;
     private final ObjectProvider<SmartThingsWatchdog> watchdog;
+    private final ObjectProvider<WarningService> warnings;
     private final ControlPin pin;
 
-    public AlertController(ObjectProvider<AlertService> alerts, ObjectProvider<SmartThingsWatchdog> watchdog, ControlPin pin) {
+    public AlertController(ObjectProvider<AlertService> alerts, ObjectProvider<SmartThingsWatchdog> watchdog,
+                           ObjectProvider<WarningService> warnings, ControlPin pin) {
         this.alerts = alerts;
         this.watchdog = watchdog;
+        this.warnings = warnings;
         this.pin = pin;
     }
 
     @GetMapping
     public List<ActiveAlert> active() {
+        List<Alert> all = new ArrayList<>();
+        AlertService service = alerts.getIfAvailable();
+        if (service != null) all.addAll(service.active());
+        watchdog.ifAvailable(w -> all.addAll(w.active()));
+        warnings.ifAvailable(w -> all.addAll(w.active()));   // official weather warnings in force (#106)
+
         List<ActiveAlert> active = new ArrayList<>();
-        alerts.ifAvailable(service -> service.active().forEach(a -> {
-            var ack = service.acknowledgement(a.key());
-            boolean critical = service.waitingForAnswer(a.key()) || ack.isPresent();
+        for (Alert a : all) {
+            var ack = service == null ? java.util.Optional.<CriticalAlerts.Ack>empty() : service.acknowledgement(a.key());
+            boolean critical = service != null && (service.waitingForAnswer(a.key()) || ack.isPresent());
             active.add(new ActiveAlert(a.key(), a.level(), a.device(), a.message(), a.time(), critical,
                     ack.map(CriticalAlerts.Ack::who).orElse(null), ack.map(CriticalAlerts.Ack::at).orElse(null)));
-        }));
-        watchdog.ifAvailable(w -> w.active().forEach(a ->
-                active.add(new ActiveAlert(a.key(), a.level(), a.device(), a.message(), a.time(), false, null, null))));
+        }
         active.sort(Comparator.comparing(ActiveAlert::time));
         return active;
     }

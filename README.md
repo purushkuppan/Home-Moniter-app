@@ -162,6 +162,22 @@ few seconds after anything changes there (#99). A device paired in Home Assistan
   never recorded, include list or not.
 - A device removed from Home Assistant stays in the list (its history stays) and is no longer recorded.
 
+## Official weather warnings
+
+Kudil watches the official warnings for the house (#106), for any home: the location and country come from Home
+Assistant (Settings → System → General, set when Home Assistant is installed), and the country picks the source.
+- **US homes:** the National Weather Service (`api.weather.gov`), free, no account or key. Checked every 3 minutes.
+- **Tornado, severe thunderstorm, flash flood, extreme wind, hurricane and storm surge warnings are critical**: they
+  ring like a water leak (see Critical alerts), e.g. "Tornado Warning for the house until 7:45 PM. Go to your safe
+  room now." Hail in a thunderstorm warning adds "move the cars into the garage". Other warnings (winter storm, ice)
+  are warnings; watches, advisories and statements are quiet notices. One alert per kind of warning while it lasts,
+  however often the service updates it, and "… has ended." afterwards.
+- The weather card shows the warnings in force with a **Details** link to the full text, or "No official warnings
+  for the house".
+- **Other countries:** no source yet; the weather card says so. Sources are added per country (`WarningSource`).
+- **Privacy:** only the home's location rounded to about 1 km is sent. The request names Kudil; set
+  `homehub.warnings.contact` (an email or website) if you want the weather service to be able to reach you.
+
 ## Weather
 
 The Status section starts with the weather: now (condition, temperature, humidity, wind) and today plus the

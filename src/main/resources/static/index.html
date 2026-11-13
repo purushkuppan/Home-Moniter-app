@@ -340,6 +340,13 @@
   .weather-cond { font-weight: 600; }
   .weather-meta { color: var(--muted); font-size: 13px; }
   .weather-meta.stale { color: var(--warn); }
+  .weather-warning { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px; font-weight: 600; }
+  .weather-warning svg.icon { width: 20px; height: 20px; flex-shrink: 0; color: currentColor; }
+  .weather-warning .warning-text { flex: 1; }
+  .weather-warning .warning-link { color: inherit; font-weight: 400; font-size: 13px; }
+  .weather-warning.critical { background: var(--bad-soft); color: var(--bad); }
+  .weather-warning.warning { background: var(--warn-soft); color: var(--warn); }
+  .weather-warning.notice { background: var(--info-soft); color: var(--info); }
   .weather-days { display: flex; gap: 8px; margin-left: auto; }
   .weather-day {
     display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 84px; padding: 8px 10px;
@@ -1310,8 +1317,11 @@ const WEATHER = {
 const weekdayShort = new Intl.DateTimeFormat(undefined, { weekday: 'short' });
 let lastWeather = null;   // kept to show it again when the temperature unit changes
 
+let warnings = {};   // official weather warnings for the house (/api/warnings, #106)
 async function loadWeather() {
   try {
+    const warningsRes = await fetch('/api/warnings', { cache: 'no-store' }).catch(() => null);
+    if (warningsRes && warningsRes.ok) warnings = await warningsRes.json();
     const res = await fetch('/api/weather', { cache: 'no-store' });
     if (res.status === 204) { $('weather').hidden = true; return; }
     if (res.ok) renderWeather(await res.json());
@@ -1351,7 +1361,25 @@ function renderWeather(w) {
     days.append(card);
   });
 
-  const children = [now, days];
+  const children = [now];
+  // Official warnings for the house (#106), most serious first, with the full text one tap away.
+  const ORDER = { critical: 0, warning: 1, notice: 2 };
+  for (const warn of [...(warnings.warnings || [])].sort((a, b) => ORDER[a.level.toLowerCase()] - ORDER[b.level.toLowerCase()])) {
+    const line = el('div', 'weather-warning ' + warn.level.toLowerCase());
+    const until = warn.ends ? ' until ' + sinceText(new Date(warn.ends)) : '';
+    line.append(icon(warn.level === 'NOTICE' ? 'bell' : 'storm'), el('span', 'warning-text', warn.event + until));
+    const more = el('a', 'warning-link', 'Details');
+    more.href = warn.link;
+    more.target = '_blank';
+    more.rel = 'noopener';
+    line.append(more);
+    children.push(line);
+  }
+  children.push(days);
+  if (warnings.note) children.push(el('div', 'weather-meta', warnings.note));
+  else if (warnings.source && !(warnings.warnings || []).length) {
+    children.push(el('div', 'weather-meta', 'No official warnings for the house (' + warnings.source + ').'));
+  }
   if (w.stale) {
     children.push(el('div', 'weather-meta stale', 'Last updated ' + sinceText(new Date(w.fetchedAt))
       + ': Home Assistant is not reachable'));

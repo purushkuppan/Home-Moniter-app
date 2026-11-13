@@ -252,6 +252,16 @@ class EventControllerTests {
     }
 
     @Test
+    void theWeatherCardShowsOfficialWarningsForTheHouse() throws Exception {
+        String page = get("/").replace("\r\n", "\n");
+        assertThat(page).contains("fetch('/api/warnings'", "const line = el('div', 'weather-warning ' + warn.level.toLowerCase());",
+                "more.href = warn.link;", "more.rel = 'noopener';", "if (warnings.note) children.push(el('div', 'weather-meta', warnings.note));",
+                "'No official warnings for the house (' + warnings.source + ').'");
+        // Without Home Assistant there is no location: the API says so instead of failing.
+        assertThat(get("/api/warnings")).contains("\"warnings\":[]");
+    }
+
+    @Test
     void versionIdentifiesTheRunningServer() throws Exception {
         String version = get("/api/version");
         assertThat(version).contains("\"started\":\"").contains("\"version\":\"");
