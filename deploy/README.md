@@ -40,6 +40,7 @@ sudo bash setup-runner.sh   # GitHub runner for automatic deploys
 sudo bash setup-tailscale.sh   # optional: open Kudil away from home (see Remote access)
 sudo bash setup-updates.sh     # automatic security updates, restart at 04:00 when needed (see Updates)
 sudo bash setup-zwave.sh       # with a Z-Wave stick: Z-Wave JS UI on the hub only, keys root-only (see Z-Wave)
+sudo bash setup-ntfy.sh        # alerts to Android phones through ntfy (see ntfy), after setup-hub.sh
 ```
 Re-run `setup-hub.sh` after any change to `install-release.sh`, `backup.sh` or the systemd units in git. The hub uses its
 own copy in `/opt/homehub/bin`, which the runner can't modify.
@@ -218,13 +219,39 @@ to it can open Kudil.
 
 Useful commands: `tailscale status` (devices and addresses), `tailscale ip -4`, `sudo tailscale down` / `up`.
 
+## ntfy (alerts to Android phones)
+Kudil sends Android phones their alerts through **ntfy** on the hub (#154, ADR 12); iPhones keep the Home Assistant app.
+`setup-ntfy.sh` sets it up, and is safe to run again:
+```bash
+cd ~/homehub-deploy && sudo bash setup-hub.sh    # first, once: Kudil's service then loads the ntfy credentials
+sudo bash setup-ntfy.sh
+```
+- Installs ntfy (Apache-2.0/GPL-2.0, its own process, nothing linked into Kudil) at the **pinned** version in the
+  script, from its GitHub release, checked against that release's `checksums.txt`. To move to a newer one, read the
+  release notes, change `VERSION` and run the script again.
+- Runs it as the `ntfy` service on port **2586**, as the user `ntfy`, with at most 96 MB of memory. Login is required
+  by default (`deny-all`), and there is no sign-up and no web app.
+- Makes a random topic (`kudil-` and 16 letters and digits) and a user `kudil` that may **only publish** to it, with
+  a token. Phones may **only read** that topic, without a login. Nobody else can publish alerts that look like
+  Kudil's.
+- Writes the topic and the token as Kudil's systemd credentials (`homehub.ntfy.topic`, `homehub.ntfy.token` in
+  `/etc/homehub/credentials`), never in git, and restarts Kudil once when they are new. `homehub.ntfy.url` is in
+  `application-prod.properties`.
+- Opens 2586 to the home network and to Tailscale devices only (`setup-tailscale.sh` keeps it open when run again).
+- Prints the topic and the phone setup. The full phone steps are in the main README (Alerts › Android phones through
+  ntfy).
+
+Check it: `systemctl status ntfy`, and `curl -s http://127.0.0.1:2586/v1/health` says `{"healthy":true}`. A new
+token: empty `/etc/homehub/credentials/homehub.ntfy.token` and run the script again (the old one stays valid until
+removed with `sudo runuser -u ntfy -- ntfy token remove kudil <token>`).
+
 ## Firewall
 `setup-firewall.sh` (also run by `setup-hub.sh`) opens Kudil (8080), Cockpit (9090) and Home Assistant (8123) to the
 home network `192.168.4.0/22` only, and removes older rules that opened them to anyone. SSH is left as it is.
 ```bash
 cd ~/homehub-deploy && sudo bash setup-firewall.sh
 ```
-`sudo ufw status numbered` then shows, from the top: the two Tailscale rules, SSH, the three home-network rules and
+`sudo ufw status numbered` then shows, from the top: the Tailscale rules (Kudil, ntfy, then "nothing but Kudil"), SSH, the three home-network rules and
 Tailscale's own port 41641/udp. The hub's IPv6 address is a private home one, so the IPv4 rules are all the home needs.
 
 ## Secrets

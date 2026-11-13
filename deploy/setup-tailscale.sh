@@ -4,12 +4,14 @@
 # Safe to run again.
 #
 # Joins the hub to your Tailscale network (tailnet) as "kudil". Only your own signed-in devices can reach it;
-# nothing is opened on the router or to the internet. The firewall lets Tailscale devices reach Kudil (8080) only.
+# nothing is opened on the router or to the internet. The firewall lets Tailscale devices reach Kudil (8080) and its
+# alert server ntfy (2586, setup-ntfy.sh) only.
 set -euo pipefail
 
 [[ $EUID -eq 0 ]] || { echo "Run it with sudo: sudo bash $0" >&2; exit 1; }
 HOSTNAME_ON_TAILNET=kudil   # the app's name, so the address is http://kudil:8080
 KUDIL_PORT=8080
+NTFY_PORT=2586   # Android phones get Kudil's alerts from ntfy away from home too (#154)
 
 if ! command -v tailscale >/dev/null; then
     # Tailscale's official package repository for this Ubuntu release, with its signing key (BSD-3 client).
@@ -36,12 +38,14 @@ tailscale up --hostname="$HOSTNAME_ON_TAILNET" --ssh=false --netfilter-mode=nodi
 # (Tailscale opened it itself before nodivert. The router doesn't forward it, so it's reachable from home only.)
 ufw allow 41641/udp comment 'Tailscale direct connections'
 
-# Kudil from your Tailscale devices, and nothing else (Home Assistant, Cockpit, SSH stay home-network only).
+# Kudil and ntfy from your Tailscale devices, and nothing else (Home Assistant, Cockpit, SSH stay home-network only).
 # ufw stops at the first matching rule, and older rules may allow ports such as 22 or 8123 from anywhere, so these two
 # go at the very top. Removed first, so running the script again puts them back on top instead of skipping them.
 ufw delete allow in on tailscale0 to any port "$KUDIL_PORT" proto tcp >/dev/null 2>&1 || true
+ufw delete allow in on tailscale0 to any port "$NTFY_PORT" proto tcp >/dev/null 2>&1 || true
 ufw delete deny in on tailscale0 >/dev/null 2>&1 || true
 ufw prepend deny in on tailscale0 comment 'Tailscale: nothing but Kudil'
+ufw prepend allow in on tailscale0 to any port "$NTFY_PORT" proto tcp comment 'ntfy over Tailscale'
 ufw prepend allow in on tailscale0 to any port "$KUDIL_PORT" proto tcp comment 'Kudil over Tailscale'
 
 ip4=$(tailscale ip -4 | head -n 1)

@@ -20,6 +20,9 @@ install -d -o root -g root -m 0700 /etc/homehub
 install -d -o root -g root -m 0700 /etc/homehub/credentials
 [[ -f /etc/homehub/credentials/homeassistant.token ]] || install -o root -g root -m 0600 /dev/null /etc/homehub/credentials/homeassistant.token
 [[ -f /etc/homehub/credentials/homehub.control.pin ]] || install -o root -g root -m 0600 /dev/null /etc/homehub/credentials/homehub.control.pin
+for ntfy in homehub.ntfy.topic homehub.ntfy.token; do   # filled in by setup-ntfy.sh
+    [[ -f /etc/homehub/credentials/$ntfy ]] || install -o root -g root -m 0600 /dev/null "/etc/homehub/credentials/$ntfy"
+done
 
 # Deploy script, owned by root so the runner cannot change it
 install -o root -g root -m 0755 "$HERE/install-release.sh" /opt/homehub/bin/install-release.sh

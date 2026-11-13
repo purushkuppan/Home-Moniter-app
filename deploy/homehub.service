@@ -15,6 +15,9 @@ EnvironmentFile=-/etc/homehub/homehub.env
 LoadCredential=homeassistant.token:/etc/homehub/credentials/homeassistant.token
 # PIN for device controls; an empty file keeps controls disabled.
 LoadCredential=homehub.control.pin:/etc/homehub/credentials/homehub.control.pin
+# Android alerts through ntfy (#154): the topic and Kudil's publish token, written by setup-ntfy.sh. Empty = ntfy off.
+LoadCredential=homehub.ntfy.topic:/etc/homehub/credentials/homehub.ntfy.topic
+LoadCredential=homehub.ntfy.token:/etc/homehub/credentials/homehub.ntfy.token
 ExecStart=/usr/bin/java -Xms64m -Xmx384m -XX:+UseSerialGC -jar /opt/homehub/current/homehub.jar --spring.profiles.active=prod
 SuccessExitStatus=143
 Restart=on-failure
