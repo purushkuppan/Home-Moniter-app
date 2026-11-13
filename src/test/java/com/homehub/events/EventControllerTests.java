@@ -244,7 +244,10 @@ class EventControllerTests {
         // New devices are confirmed with a name, hidden, or shown again; every choice needs the PIN.
         assertThat(page).contains("const DEVICE_GROUPS = [['new', 'To review'], ['confirmed', 'Watched'], ['hidden', 'Hidden']];",
                 "prompt('What does the family call it? Kudil watches it under this name.', d.suggestedName)",
-                "async function chooseDevice(d, action, name) {\n  if (!await ensureUnlocked()) return;",
+                "async function chooseDevice(d, action, name, minutes) {\n  if (!await ensureUnlocked()) { loadDevices(); return; }",
+                // Doors and windows: their ready-made alert can be changed or switched off (#100).
+                "select.onchange = () => chooseDevice(d, 'open-for', undefined, select.value === '' ? null : Number(select.value));",
+                "d.alerts.join(' · ')",
                 "fetch('/api/devices/' + d.id");
     }
 

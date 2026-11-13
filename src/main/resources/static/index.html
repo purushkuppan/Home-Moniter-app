@@ -228,6 +228,7 @@
   .device-row .device-name { font-weight: 600; }
   .device-row .device-sub { color: var(--muted); font-size: 13px; }
   .device-row .device-actions { display: flex; gap: 6px; flex-shrink: 0; }
+  .device-row select { margin-top: 6px; justify-self: start; max-width: 100%; }
   .status-chip.action { cursor: pointer; border: 0; font: inherit; }
   .auto-options { margin: 12px 0 0; padding: 2px 14px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); }
   .auto-options[hidden] { display: none; }
@@ -386,7 +387,7 @@
   .control .label { color: var(--muted); font-size: 13px; }
   .control .note { flex-basis: 100%; font-size: 11px; color: var(--warn); line-height: 1.35; }
   .control-actions { display: flex; align-items: center; gap: 6px; }
-  .control select {
+  .control select, .device-row select {
     font: inherit; font-size: 13px; padding: 5px 8px; border-radius: 8px;
     border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
   }
@@ -477,7 +478,7 @@
 
   /* Touch screens of any size (tablets too): every control at least --tap high. */
   @media (pointer: coarse) {
-    .btn, .chip, .control select { min-height: var(--tap); }
+    .btn, .chip, .control select, .device-row select { min-height: var(--tap); }
     .icon-btn { width: var(--tap); height: var(--tap); }
     .unit-switch button { min-height: calc(var(--tap) - 6px); }
   }
@@ -511,7 +512,7 @@
     .weather-day { flex: 1; min-width: 0; padding: 8px 4px; }
 
     /* Text of at least 16px stops iPhones from zooming in when a field is tapped */
-    .control select, .search input, dialog input { font-size: 16px; }
+    .control select, .device-row select, .search input, dialog input { font-size: 16px; }
     .control select { padding: 7px 8px; }
     .btn, .btn.small, .chip { min-height: var(--tap); padding: 8px 14px; font-size: 14px; }
     .unit-switch button { min-height: calc(var(--tap) - 6px); padding: 6px 9px; font-size: 14px; }
@@ -1473,6 +1474,18 @@ function deviceRow(d) {
   const where = [d.kindLabel, d.room, d.maker].filter(Boolean).join(' · ');
   text.append(el('span', 'device-sub', where + (d.inHomeAssistant ? '' : ' · removed from Home Assistant')));
   if (d.measures.length) text.append(el('span', 'device-sub', d.measures.join(', ')));
+  if (d.alerts.length) text.append(el('span', 'device-sub', d.alerts.join(' · ')));   // its ready-made alerts (#100)
+  if (d.status === 'confirmed' && d.openForChoices.length) {
+    // Doors and windows: how long they may stay open before an alert, or never.
+    const select = el('select');
+    select.setAttribute('aria-label', 'Alert if ' + d.name + ' is open longer than');
+    const option = (value, label) => { const o = el('option', '', label); o.value = value; return o; };
+    select.append(option('', 'Alert if open ' + d.defaultOpenFor + ' min (default)'));
+    for (const m of d.openForChoices) select.append(option(String(m), m === 0 ? 'No alert when left open' : 'Alert if open ' + m + ' min'));
+    select.value = d.openFor === null ? '' : String(d.openFor);
+    select.onchange = () => chooseDevice(d, 'open-for', undefined, select.value === '' ? null : Number(select.value));
+    text.append(select);
+  }
   const actions = el('div', 'device-actions');
   const button = (label, onClick) => { const b = el('button', 'btn small', label); b.type = 'button'; b.onclick = onClick; return b; };
   if (d.status === 'new') {
@@ -1492,13 +1505,13 @@ function deviceRow(d) {
 }
 
 /** Confirm, hide or show a device. Needs the PIN: it decides what Kudil watches. */
-async function chooseDevice(d, action, name) {
-  if (!await ensureUnlocked()) return;
+async function chooseDevice(d, action, name, minutes) {
+  if (!await ensureUnlocked()) { loadDevices(); return; }   // put a changed choice back
   try {
     const res = await fetch('/api/devices/' + d.id, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', [PIN_HEADER]: controlPin },
-      body: JSON.stringify({ action, name })
+      body: JSON.stringify({ action, name, minutes })
     });
     const body = await res.json().catch(() => ({}));
     if (res.status === 401 || res.status === 429 || res.status === 403) lockControls();

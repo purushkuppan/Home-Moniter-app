@@ -672,6 +672,8 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
         if (CONTACT_CLASSES.contains(deviceClass)) return "contact";
         if ("temperature".equals(deviceClass)) return "temperature";
         if ("moisture".equals(deviceClass)) return "leak";   // water leak sensors: wet / dry
+        if ("smoke".equals(deviceClass)) return "smoke";     // smoke alarms: detected / clear (#100)
+        if ("carbon_monoxide".equals(deviceClass) || "gas".equals(deviceClass)) return "co";
         if ("power".equals(deviceClass)) return "power";     // watts, e.g. a smart plug's load
         if ("battery".equals(deviceClass)) return "battery"; // "Battery level" (Z-Wave) as well as "Battery"
         if ("lock".equals(domain)) return "lock";
@@ -686,6 +688,10 @@ public class HomeAssistantConnector implements DeviceConnector, SmartLifecycle {
         if ("binary_sensor".equals(domain) && CONTACT_CLASSES.contains(deviceClass)) {
             if ("on".equals(value)) return "open";
             if ("off".equals(value)) return "closed";
+        }
+        if ("binary_sensor".equals(domain) && Set.of("smoke", "carbon_monoxide", "gas").contains(deviceClass)) {
+            if ("on".equals(value)) return "detected";
+            if ("off".equals(value)) return "clear";
         }
         if ("binary_sensor".equals(domain) && "moisture".equals(deviceClass)) {
             if ("on".equals(value)) return "wet";

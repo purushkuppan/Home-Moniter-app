@@ -5,6 +5,9 @@ import com.homehub.events.Event;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalTime;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -20,7 +23,10 @@ import java.util.regex.Pattern;
 /**
  * Decides when to raise an alert, from the device readings HomeHub stores and the passing of time.
  * <ul>
- *   <li>A door that stays open longer than its limit, and "closed" once it shuts again.</li>
+ *   <li>A door that stays open longer than its limit, and "closed" once it shuts again. Every door, window or garage
+ *       door without a limit of its own gets the ready-made one (#100, {@code openFor}, or what the Devices list says):
+ *       a notice by day, a warning at night.</li>
+ *   <li>A smoke or CO alarm going off, right away (critical), and "clear" afterwards; a lock that jams.</li>
  *   <li>A temperature above its limit for longer than {@code tooWarmFor}, and "back to normal" afterwards.</li>
  *   <li>A washer or dryer whose cycle ends (job state "finish(ed)", or the machine going from run/pause to stop).</li>
  *   <li>A battery at or below {@code lowBattery} percent (or a battery sensor that says "on" = low), right away, and
@@ -55,6 +61,9 @@ final class AlertRules {
     private final Duration connectionLostAfter;
     private final Double lowBattery;   // null: no battery warnings
     private final Map<String, String> leakMessages = new HashMap<>();   // by leak sensor
+    private final DefaultAlertProperties defaults;
+    private final ZoneId zone;                    // the hub's: "night" is local time
+    private final DeviceAlertSettings deviceSettings;
 
     /** A door that is open, or a reading that is too warm: since when, and whether the alert has gone out. */
     private static final class Watch {
@@ -62,6 +71,8 @@ final class AlertRules {
         final Instant since;
         String reading = "";
         String message;   // set once alerted
+        Duration limit;   // doors: how long it may stay open
+        boolean byDefault; // doors: the ready-made limit (#100), a notice by day
 
         Watch(String device, Instant since) {
             this.device = device;
@@ -78,8 +89,18 @@ final class AlertRules {
     private Watch connectionLost;   // null while Home Assistant is reachable
     private final Map<String, Watch> lowBatteries = new LinkedHashMap<>();   // reported at once, so message is always set
     private final Map<String, Watch> leaks = new LinkedHashMap<>();          // reported at once, so message is always set
+    private final Map<String, Watch> alarms = new LinkedHashMap<>();         // smoke and CO, by "smoke:<device>"
+    private final Map<String, Watch> jammed = new LinkedHashMap<>();         // locks
 
+    /** Only the configured rules, no ready-made ones (as before #100). */
     AlertRules(AlertProperties properties) {
+        this(properties, new DefaultAlertProperties(Duration.ZERO, null, null), ZoneOffset.UTC, DeviceAlertSettings.NONE);
+    }
+
+    AlertRules(AlertProperties properties, DefaultAlertProperties defaults, ZoneId zone, DeviceAlertSettings deviceSettings) {
+        this.defaults = defaults;
+        this.zone = zone;
+        this.deviceSettings = deviceSettings;
         properties.doorOpen().forEach((device, limit) -> doorLimits.put(key(device), limit));
         properties.tooWarm().forEach((device, limit) -> warmLimits.put(key(device), limit));
         this.warmFor = properties.tooWarmFor();
@@ -100,7 +121,10 @@ final class AlertRules {
                 .sorted(Comparator.comparing(Event::id, Comparator.nullsFirst(Comparator.naturalOrder())))
                 .forEach(e -> {
                     if (Level.PROBLEM.eventType.equals(e.type())) lastAlert.put(key(e.device()), e);
-                    else onEvent(e);
+                    // A ready-made open-door alert by day is a notice (#100).
+                    else if (Level.NOTICE.eventType.equals(e.type()) && e.value() != null && e.value().contains(" open for ")) {
+                        lastAlert.put(key(e.device()), e);
+                    } else onEvent(e);
                 });
         for (Map<String, Watch> watches : List.of(openDoors, tooWarm, offline)) {
             watches.forEach((device, w) -> {
@@ -153,18 +177,60 @@ final class AlertRules {
         String device = key(e.device());
         switch (e.type()) {
             case "contact" -> {
-                if (!doorLimits.containsKey(device)) break;
+                // Its own limit (the fridge), else what the Devices list says, else the ready-made one (#100).
+                Duration limit = doorLimits.get(device);
+                boolean byDefault = limit == null;
+                if (byDefault) limit = deviceSettings.openFor(e.device()).orElse(defaults.openFor());
+                if (limit.isZero()) {
+                    openDoors.remove(device);   // no open-door alert for this one (switched off)
+                    break;
+                }
                 if (value.equals("open")) {
-                    openDoors.putIfAbsent(device, new Watch(e.device(), time));
+                    Watch w = openDoors.computeIfAbsent(device, d -> new Watch(e.device(), time));
+                    w.limit = limit;
+                    w.byDefault = byDefault;
                 } else if (value.equals("closed")) {
                     Watch w = openDoors.remove(device);
                     if (w != null && w.message != null) {
                         return List.of(new Alert("door:" + device, Level.CLEARED, w.device,
-                                name(w.device) + " door closed. It was open for "
+                                doorName(w.device) + " closed. It was open for "
                                         + openFor(Duration.between(w.since, time)) + ".", time));
                     }
                 }
                 // "unavailable" and the like say nothing about the door: keep watching.
+            }
+            case "smoke", "co" -> {
+                String what = e.type().equals("smoke") ? "Smoke" : "Carbon monoxide";
+                String alarmKey = e.type() + ":" + device;
+                if (value.equals("detected") && !alarms.containsKey(alarmKey)) {
+                    Watch w = new Watch(e.device(), time);
+                    w.message = what + " detected: " + name(e.device()) + ". Get everyone out.";
+                    alarms.put(alarmKey, w);
+                    return List.of(new Alert(alarmKey, Level.PROBLEM, e.device(), w.message, time));
+                }
+                if (value.equals("clear")) {
+                    Watch w = alarms.remove(alarmKey);
+                    if (w != null) {
+                        return List.of(new Alert(alarmKey, Level.CLEARED, w.device,
+                                name(w.device) + " is clear again. " + what + " was detected for "
+                                        + openFor(Duration.between(w.since, time)) + ".", time));
+                    }
+                }
+            }
+            case "lock" -> {
+                if (value.equals("jammed") && !jammed.containsKey(device)) {
+                    Watch w = new Watch(e.device(), time);
+                    w.message = name(e.device()) + " is jammed. Check that it is fully locked.";
+                    jammed.put(device, w);
+                    return List.of(new Alert("lock:" + device, Level.PROBLEM, e.device(), w.message, time));
+                }
+                if (value.equals("locked") || value.equals("unlocked")) {
+                    Watch w = jammed.remove(device);
+                    if (w != null) {
+                        return List.of(new Alert("lock:" + device, Level.CLEARED, w.device,
+                                name(w.device) + " works again: " + value + ".", time));
+                    }
+                }
             }
             case "temperature" -> {
                 Double limit = warmLimits.get(device);
@@ -248,9 +314,12 @@ final class AlertRules {
     synchronized List<Alert> check(Instant now) {
         List<Alert> due = new ArrayList<>();
         openDoors.forEach((device, w) -> {
-            if (w.message == null && !now.isBefore(w.since.plus(doorLimits.get(device)))) {
-                w.message = name(w.device) + " door has been open for " + human(Duration.between(w.since, now));
-                due.add(new Alert("door:" + device, Level.PROBLEM, w.device, w.message, now));
+            if (w.message == null && w.limit != null && !now.isBefore(w.since.plus(w.limit))) {
+                w.message = doorName(w.device) + " has been open for " + human(Duration.between(w.since, now));
+                // A ready-made limit by day is worth a quiet notice; at night, or a limit of its own, a warning.
+                boolean night = defaults.isNight(LocalTime.ofInstant(now, zone));
+                Level level = w.byDefault && !night ? Level.NOTICE : Level.PROBLEM;
+                due.add(new Alert("door:" + device, level, w.device, w.message, now));
             }
         });
         tooWarm.forEach((device, w) -> {
@@ -290,6 +359,8 @@ final class AlertRules {
         lowBatteries.forEach((device, w) ->
                 active.add(new Alert("battery:" + device, Level.PROBLEM, w.device, w.message, w.since)));
         leaks.forEach((device, w) -> active.add(new Alert("leak:" + device, Level.PROBLEM, w.device, w.message, w.since)));
+        alarms.forEach((key, w) -> active.add(new Alert(key, Level.PROBLEM, w.device, w.message, w.since)));
+        jammed.forEach((device, w) -> active.add(new Alert("lock:" + device, Level.PROBLEM, w.device, w.message, w.since)));
         if (connectionLost != null && connectionLost.message != null) {
             active.add(new Alert(Alert.CONNECTION_KEY, Level.PROBLEM, HOME_ASSISTANT, connectionLost.message,
                     connectionLost.since));
@@ -314,6 +385,12 @@ final class AlertRules {
 
     private static String mainKey(String device) {
         return key(mainName(device));
+    }
+
+    /** "Refrigerator/Fridge" -> "Fridge door", "Back door" -> "Back door", "Bedroom window" -> "Bedroom window" */
+    static String doorName(String device) {
+        String name = name(device);
+        return name.toLowerCase(Locale.ROOT).matches(".*\\b(door|window|gate|garage)$") ? name : name + " door";
     }
 
     /** "Refrigerator/Fridge" -> "Fridge", "Washer" -> "Washer" */

@@ -4,18 +4,22 @@ import static com.homehub.homeassistant.JsonValues.asMap;
 import static com.homehub.homeassistant.JsonValues.firstNonBlank;
 import static com.homehub.homeassistant.JsonValues.text;
 
+import com.homehub.alerts.DeviceAlertSettings;
 import com.homehub.events.Event;
 import com.homehub.events.EventRepository;
 import com.homehub.homeassistant.EntityDirectory;
+import com.homehub.homeassistant.EntityNames;
 import com.homehub.homeassistant.EntityPatterns;
 import com.homehub.homeassistant.RegistrySnapshot;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -40,7 +44,7 @@ import org.springframework.stereotype.Service;
  * </ul>
  */
 @Service
-public class DeviceCatalog implements EntityDirectory {
+public class DeviceCatalog implements EntityDirectory, DeviceAlertSettings {
 
     private static final Logger log = LoggerFactory.getLogger(DeviceCatalog.class);
 
@@ -50,28 +54,34 @@ public class DeviceCatalog implements EntityDirectory {
     private final DeviceRepository repository;
     private final EventRepository events;
     private final EntityPatterns include;
+    private final EntityNames entityNames;
     private final ApplicationEventPublisher publisher;
     private final Clock clock;
 
-    /** Lookups for the connector, rebuilt after every change; read without locking. */
-    private record Index(Set<String> recorded, Set<String> hidden, Map<String, String> names, Set<String> onlyOfKind) {
-        static final Index EMPTY = new Index(Set.of(), Set.of(), Map.of(), Set.of());
+    /** Lookups for the connector and the alerts, rebuilt after every change; read without locking. */
+    private record Index(Set<String> recorded, Set<String> hidden, Map<String, String> names, Set<String> onlyOfKind,
+                         Map<String, Duration> openFor) {
+        static final Index EMPTY = new Index(Set.of(), Set.of(), Map.of(), Set.of(), Map.of());
     }
 
     private volatile Index index = Index.EMPTY;
 
+    /** "Alert if open longer than" choices on the Devices list, in minutes; 0 = never. */
+    static final List<Integer> OPEN_FOR_CHOICES = List.of(0, 1, 2, 5, 10, 15, 30, 60);
+
     @Autowired
     public DeviceCatalog(DeviceRepository repository, EventRepository events,
                          @Value("${homehub.connectors.homeassistant.include:}") String include,
-                         ApplicationEventPublisher publisher) {
-        this(repository, events, include, publisher, Clock.systemUTC());
+                         EntityNames entityNames, ApplicationEventPublisher publisher) {
+        this(repository, events, include, entityNames, publisher, Clock.systemUTC());
     }
 
-    DeviceCatalog(DeviceRepository repository, EventRepository events, String include,
+    DeviceCatalog(DeviceRepository repository, EventRepository events, String include, EntityNames entityNames,
                   ApplicationEventPublisher publisher, Clock clock) {
         this.repository = repository;
         this.events = events;
         this.include = EntityPatterns.parse(include);
+        this.entityNames = entityNames == null ? EntityNames.none() : entityNames;
         this.publisher = publisher;
         this.clock = clock;
         reindex();   // what was confirmed before a restart is recorded from the first reading on
@@ -141,20 +151,27 @@ public class DeviceCatalog implements EntityDirectory {
             String haName = firstNonBlank(text(d.get("name_by_user")), text(d.get("name")), "Unnamed device");
             String room = areas.get(text(d.get("area_id")));
             List<String> entityIds = entities.stream().map(DeviceKinds.EntityInfo::entityId).toList();
+            List<Device.Reading> readings = DeviceKinds.readingsOf(kind, entities);
             Device fromHa = new Device(0, haId, haName, haName, room, blankToNull(text(d.get("manufacturer"))),
-                    blankToNull(text(d.get("model"))), kind, Device.Status.NEW, entityIds,
-                    DeviceKinds.readingsOf(kind, entities), true, now, null);
+                    blankToNull(text(d.get("model"))), kind, Device.Status.NEW, entityIds, readings, true, now, null, null);
+            // Readings already shown under one name of their own (homehub.connectors.homeassistant.names, e.g.
+            // "Back door"): that is what the household calls the device, so the Devices list uses it too.
+            String shownAs = commonName(readings);
 
             Device existing = known.get(haId);
             if (existing != null) {
                 repository.updateFromHomeAssistant(fromHa);
+                if (shownAs != null && existing.name().equals(existing.haName()) && !shownAs.equals(existing.name())) {
+                    repository.updateChoice(existing.id(), shownAs, existing.status(), existing.confirmedAt());
+                }
                 continue;
             }
             // Recorded before #99 through the include patterns: confirmed as it is, so nothing changes for it.
             boolean alreadyWatched = entityIds.stream().anyMatch(include::matches);
+            String name = shownAs != null ? shownAs : haName;
             Device added = alreadyWatched
-                    ? new Device(0, haId, haName, haName, room, fromHa.manufacturer(), fromHa.model(), kind,
-                    Device.Status.CONFIRMED, entityIds, fromHa.readings(), true, now, now)
+                    ? new Device(0, haId, name, haName, room, fromHa.manufacturer(), fromHa.model(), kind,
+                    Device.Status.CONFIRMED, entityIds, readings, true, now, now, null)
                     : fromHa;
             repository.insert(added);
             found.add(added);
@@ -165,7 +182,7 @@ public class DeviceCatalog implements EntityDirectory {
             if (!seen.contains(d.haDeviceId()) && d.inHomeAssistant()) {
                 repository.updateFromHomeAssistant(new Device(d.id(), d.haDeviceId(), d.name(), d.haName(), d.room(),
                         d.manufacturer(), d.model(), d.kind(), d.status(), d.entities(), d.readings(), false,
-                        d.firstSeen(), d.confirmedAt()));
+                        d.firstSeen(), d.confirmedAt(), d.openForMinutes()));
             }
         }
 
@@ -219,6 +236,41 @@ public class DeviceCatalog implements EntityDirectory {
         return find(id);
     }
 
+    /**
+     * A door or window's "alert if open longer than" (#100): minutes, 0 for never, null for the default. Only for door,
+     * window and garage door sensors; the fridge's doors have limits of their own.
+     */
+    public synchronized Device setOpenFor(long id, Integer minutes) {
+        Device d = find(id);
+        if (d.kind() != DeviceKind.OPENING && d.kind() != DeviceKind.GARAGE) {
+            throw new IllegalArgumentException("Only door and window sensors have this setting.");
+        }
+        if (minutes != null && !OPEN_FOR_CHOICES.contains(minutes)) {
+            throw new IllegalArgumentException("Choose one of " + OPEN_FOR_CHOICES + " minutes.");
+        }
+        repository.updateOpenFor(id, minutes);
+        reindex();
+        return find(id);
+    }
+
+    // ---------------------------------------------------------------- DeviceAlertSettings (for the alerts)
+
+    @Override
+    public Optional<Duration> openFor(String device) {
+        if (device == null) return Optional.empty();
+        String key = device.trim().toLowerCase(Locale.ROOT);
+        Duration own = index.openFor().get(key);
+        if (own == null && key.contains("/")) own = index.openFor().get(key.substring(0, key.indexOf('/')));
+        return Optional.ofNullable(own);
+    }
+
+    /** The one name all these readings are shown under (name overrides), or null. */
+    private String commonName(List<Device.Reading> readings) {
+        Set<String> shown = new HashSet<>();
+        for (Device.Reading r : readings) shown.add(entityNames.nameOf(r.entityId()));
+        return readings.isEmpty() || shown.size() != 1 || shown.contains(null) ? null : shown.iterator().next();
+    }
+
     private Device find(long id) {
         return repository.find(id).orElseThrow(() -> new java.util.NoSuchElementException("No such device."));
     }
@@ -227,12 +279,14 @@ public class DeviceCatalog implements EntityDirectory {
     private void reindex() {
         Set<String> recorded = new HashSet<>(), hidden = new HashSet<>(), only = new HashSet<>();
         Map<String, String> names = new HashMap<>();
+        Map<String, Duration> openFor = new HashMap<>();
         for (Device d : repository.all()) {
             if (d.status() == Device.Status.HIDDEN) {
                 hidden.addAll(d.entities());
                 continue;
             }
             d.entities().forEach(id -> names.put(id, d.name()));
+            if (d.openForMinutes() != null) openFor.put(d.name().toLowerCase(Locale.ROOT), Duration.ofMinutes(d.openForMinutes()));
             if (d.status() != Device.Status.CONFIRMED || !d.inHomeAssistant()) continue;
             Map<String, Integer> perKind = new HashMap<>();
             d.readings().forEach(r -> perKind.merge(r.kindKey(), 1, Integer::sum));
@@ -242,7 +296,7 @@ public class DeviceCatalog implements EntityDirectory {
             }
         }
         Index before = index;
-        index = new Index(Set.copyOf(recorded), Set.copyOf(hidden), Map.copyOf(names), Set.copyOf(only));
+        index = new Index(Set.copyOf(recorded), Set.copyOf(hidden), Map.copyOf(names), Set.copyOf(only), Map.copyOf(openFor));
         if (!before.recorded().equals(index.recorded()) || !before.hidden().equals(index.hidden())
                 || !before.names().equals(index.names())) {
             publisher.publishEvent(new DevicesChanged(clock.instant()));

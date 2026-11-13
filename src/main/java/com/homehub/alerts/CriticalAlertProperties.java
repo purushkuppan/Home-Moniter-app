@@ -10,7 +10,7 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * leak at 3 AM. They ring as an alarm on phones (also on silent and in Do Not Disturb), carry an "I'm on it" button,
  * and repeat until someone taps it or the problem ends.
  *
- * @param kinds        which alerts are critical, by the start of their key: {@code leak} (later smoke, CO)
+ * @param kinds        which alerts are critical, by the start of their key: {@code leak}, {@code smoke}, {@code co}
  * @param repeatEvery  how often an unanswered critical alert is sent again
  * @param maxRepeats   after this many repeats it stops (it stays on the dashboard until the problem ends)
  * @param escalateAfter when nobody has answered by then, it also goes to {@code escalateTo}
@@ -29,7 +29,7 @@ public record CriticalAlertProperties(
         List<String> speakOn) {
 
     public CriticalAlertProperties {
-        kinds = kinds == null ? List.of("leak") : kinds.stream().map(String::trim).filter(s -> !s.isEmpty()).toList();
+        kinds = kinds == null ? List.of("leak", "smoke", "co") : kinds.stream().map(String::trim).filter(s -> !s.isEmpty()).toList();
         if (repeatEvery == null || repeatEvery.isZero() || repeatEvery.isNegative()) repeatEvery = Duration.ofMinutes(5);
         if (maxRepeats == null || maxRepeats < 0) maxRepeats = 24;
         if (escalateAfter == null || escalateAfter.isNegative()) escalateAfter = Duration.ofMinutes(10);
@@ -38,7 +38,7 @@ public record CriticalAlertProperties(
         speakOn = speakOn == null ? List.of() : speakOn.stream().map(String::trim).filter(s -> !s.isEmpty()).toList();
     }
 
-    /** The defaults: water leaks are critical, repeated every 5 minutes, nobody else to escalate to. */
+    /** The defaults: water leaks, smoke and CO are critical, repeated every 5 minutes, nobody else to escalate to. */
     public static CriticalAlertProperties defaults() {
         return new CriticalAlertProperties(null, null, null, null, null, null);
     }

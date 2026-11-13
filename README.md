@@ -93,7 +93,7 @@ HomeHub warns when something needs attention. Details and trade-offs: [ADR 5](do
 
 | Alert | When | Afterwards |
 |---|---|---|
-| Door left open | Fridge door open 1 minute, freezer door 2 minutes | "Fridge door closed. It was open for 3 min." |
+| Door left open | Fridge door open 1 minute, freezer door 2 minutes. **Any other door, window or garage door** (#100): open 10 minutes, a notice by day and a warning at night (22:00–06:00); change it or switch it off per device under Settings → Devices | "Fridge door closed. It was open for 3 min." |
 | Too warm | Fridge above 45 °F or freezer above 10 °F for 15 minutes | "Fridge temperature is back to normal" |
 | Cycle finished | Washer or dryer ends its cycle | – |
 | Device offline | All of the refrigerator's readings "unavailable" in Home Assistant for 30 minutes | "Refrigerator is back online. It was offline for 42 minutes." |
@@ -103,6 +103,8 @@ HomeHub warns when something needs attention. Details and trade-offs: [ADR 5](do
 | Rain expected | Checked at 07:00: today's forecast has at least 0.1 in. "Rain expected today: 0.31 in" (or Snow) | – |
 | Backup missing | Hub only: the last good nightly backup is more than 26 hours old. "Nightly backup missing. Last good backup: Sun Nov 8, 4:01 PM." | "Backups are working again. Last backup: Tue Nov 10, 3:01 AM." |
 | Water leak (**critical**) | A leak sensor reads wet. "Water leak in the kitchen". Rings as an alarm and repeats every 5 minutes until someone taps **I'm on it** (see below) | "Kitchen leak sensor is dry again." |
+| Smoke or CO (**critical**) | A smoke or CO alarm goes off. "Smoke detected: Hall smoke alarm. Get everyone out." Rings like a leak | "Hall smoke alarm is clear again. Smoke was detected for 4 min." |
+| Lock jammed | A lock reports jammed. "Front door lock is jammed. Check that it is fully locked." | "Front door lock works again: locked." |
 | Low battery | A battery at or below 20%. "Leak sensor battery is low: 15%. Replace it soon." | "Leak sensor battery is fine again: 100%." |
 
 - **Dashboard:** a red banner shows problems still going on. Every alert is listed in the activity list
@@ -150,6 +152,9 @@ few seconds after anything changes there (#99). A device paired in Home Assistan
   other…), its room, maker and model, and what Kudil would record from it ("Water, Battery"). Never entity ids.
 - A **new** device records nothing and sends no alerts until someone **confirms** it with a name ("Laundry leak
   sensor"; Kudil suggests room + kind). **Hide** a device to ignore it (the Z-Wave stick, a phone). Both need the PIN.
+- A confirmed device gets ready-made alerts for its kind on day one (#100): leak, smoke and CO critical, doors and
+  windows left open, locks jammed, low batteries. The list says which; a door's "alert if open" time can be changed or
+  switched off there (PIN).
 - Kudil records what matters for the kind: water and battery for a leak sensor, on/off and watts for a plug; not
   signal strength, firmware or settings.
 - Devices Kudil already recorded through `homehub.connectors.homeassistant.include` are confirmed automatically under

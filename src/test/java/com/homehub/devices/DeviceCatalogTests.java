@@ -198,6 +198,41 @@ class DeviceCatalogTests {
         assertThat(catalog.unhide(phone.id()).status()).as("back to review: it never was").isEqualTo(Device.Status.NEW);
     }
 
+    /** The hub plus the back door, shown as "Back door" through homehub.connectors.homeassistant.names. */
+    static Snapshot hubWithBackDoor() {
+        return hub().device("door", "Backdoor openclose", "Zooz", "ZSE41", "living_room", null)
+                .entity("binary_sensor.living_room_backdoor_openclose", "door", "door")
+                .entity("sensor.living_room_backdoor_openclose_battery_level", "door", "battery", "diagnostic", "zwave_js");
+    }
+
+    @Test
+    void devicesAreNamedAsTheirReadingsAreAlreadyShown() {
+        catalog.sync(hubWithBackDoor().build());
+
+        assertThat(named("Backdoor openclose").name()).isEqualTo("Back door");
+        assertThat(named("Water Leak XS Sensor").name()).isEqualTo("Kitchen leak sensor");
+        assertThat(named("Refrigerator").name()).as("no name of its own: Home Assistant's").isEqualTo("Refrigerator");
+    }
+
+    @Test
+    void aDoorsOpenAlertCanBeChangedOrSwitchedOff() {
+        catalog.sync(hubWithBackDoor().build());
+        Device door = named("Backdoor openclose");
+        assertThat(catalog.openFor("Back door")).as("the default until changed").isEmpty();
+
+        catalog.setOpenFor(door.id(), 2);
+        assertThat(catalog.openFor("Back door")).contains(java.time.Duration.ofMinutes(2));
+        assertThat(catalog.openFor("back door")).as("any case").contains(java.time.Duration.ofMinutes(2));
+        catalog.setOpenFor(door.id(), 0);
+        assertThat(catalog.openFor("Back door")).contains(java.time.Duration.ZERO);
+        catalog.setOpenFor(door.id(), null);
+        assertThat(catalog.openFor("Back door")).isEmpty();
+
+        assertThatThrownBy(() -> catalog.setOpenFor(door.id(), 7)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> catalog.setOpenFor(named("Refrigerator").id(), 5))
+                .as("the fridge has its own limits").isInstanceOf(IllegalArgumentException.class);
+    }
+
     @Test
     void homeAssistantChangesUpdateTheRoomButNotKudilsChoices() {
         catalog.sync(hub().build());
