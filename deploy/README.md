@@ -133,6 +133,19 @@ sudo docker start zwave-js-ui
 ```
 Then `sudo rm -rf /root/restore`.
 
+### Rebuilding the hub
+[docs/runbook-rebuild-hub.md](../docs/runbook-rebuild-hub.md) takes a new or wiped laptop to a running hub
+(Ubuntu, Kudil, Home Assistant, Z-Wave JS UI, Tailscale, firewall, updates, backups, the GitHub runner) and then
+restores the data from an archive. It also has the restore drill, every three months.
+
+Before restoring from an archive, check it. `restore-check.sh` only reads: it unpacks the archive into a private
+temporary folder (removed afterwards), checks both databases, prints the number of events and each device's latest
+reading, and checks that Home Assistant's and Z-Wave JS UI's settings are there, without printing anything from them:
+```bash
+sudo bash ~/homehub-deploy/restore-check.sh /var/backups/homehub/kudil-backup-2026-11-09.tar.gz
+```
+It ends with `The archive is good` or stops and says what is wrong. It needs `sqlite3` (installed by `setup-hub.sh`).
+
 ## Z-Wave (Z-Wave JS UI)
 Z-Wave JS UI runs in its own container (`zwave-js-ui`, MIT) with its data and the Z-Wave security keys in
 `/opt/zwave-js-ui`. Home Assistant talks to it on `127.0.0.1:3000`. `setup-zwave.sh` locks it down (#144):
