@@ -41,6 +41,7 @@ public class AlertService {
     static final long PHONE_DELAY_AFTER_RECONNECT_SECONDS = 30;
 
     private final AlertRules rules;
+    private volatile Instant lastCheck;   // the timers' last run, for the dead-man switch (#102)
     private final AlertProperties properties;              // kept for the self-check's dry run (#124)
     private final DefaultAlertProperties defaults;
     private final DeviceAlertSettings deviceSettings;
@@ -146,6 +147,11 @@ public class AlertService {
         work(() -> raise(alerts));
     }
 
+    /** When the timers last ran (every few seconds while alerts work), or null before the first run. */
+    public Instant lastCheck() {
+        return lastCheck;
+    }
+
     /** What a dry run of the rules raised: the alerts, and whether the first one would ring as critical. */
     public record DryRun(List<Alert> alerts, boolean critical) {
     }
@@ -174,6 +180,7 @@ public class AlertService {
     void check() {
         // An exception would cancel the repeating check, so catch everything.
         Instant now = clock.instant();
+        lastCheck = now;
         try {
             raise(rules.check(now));
         } catch (RuntimeException ex) {
