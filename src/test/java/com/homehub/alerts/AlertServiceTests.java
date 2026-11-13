@@ -87,7 +87,7 @@ class AlertServiceTests {
 
     @Test
     void criticalAlertDefaults() {
-        assertThat(critical.kinds()).containsExactly("leak", "smoke", "co");
+        assertThat(critical.kinds()).containsExactly("leak", "smoke", "co", "severe");
         assertThat(critical.repeatEvery()).isEqualTo(Duration.ofMinutes(5));
         assertThat(critical.maxRepeats()).isEqualTo(24);
         assertThat(critical.escalateAfter()).isEqualTo(Duration.ofMinutes(10));
