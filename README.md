@@ -105,7 +105,7 @@ HomeHub warns when something needs attention. Details and trade-offs: [ADR 5](do
 | Water leak (**critical**) | A leak sensor reads wet. "Water leak in the kitchen". Rings as an alarm and repeats every 5 minutes until someone taps **I'm on it** (see below) | "Kitchen leak sensor is dry again." |
 | Smoke or CO (**critical**) | A smoke or CO alarm goes off. "Smoke detected: Hall smoke alarm. Get everyone out." Rings like a leak | "Hall smoke alarm is clear again. Smoke was detected for 4 min." |
 | Lock jammed | A lock reports jammed. "Front door lock is jammed. Check that it is fully locked." | "Front door lock works again: locked." |
-| Low battery | A battery at or below 20%. "Leak sensor battery is low: 15%. Replace it soon." | "Leak sensor battery is fine again: 100%." |
+| Low battery | A battery at or below 20%, as a quiet notice: "Leak sensor battery is low: 15%. Replace it soon." While it stays low, a reminder at most once a week with its newest reading ("… is still low: 11% …") | "Leak sensor battery is fine again: 100%." |
 
 - **Dashboard:** a red banner shows problems still going on. Every alert is listed in the activity list
   (Alert, All clear, Notice).
