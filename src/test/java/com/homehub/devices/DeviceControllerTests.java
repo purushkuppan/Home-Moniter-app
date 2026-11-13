@@ -26,6 +26,7 @@ class DeviceControllerTests {
 
     @LocalServerPort int port;
     @Autowired DeviceCatalog catalog;
+    @Autowired com.homehub.events.EventRepository events;
     @Autowired JdbcTemplate jdbc;
 
     @BeforeEach
@@ -114,6 +115,37 @@ class DeviceControllerTests {
                 .contains("(default)", "\"openFor\":null");
         assertThat(send("POST", "/api/devices/" + door, "4821", "{\"action\":\"open-for\",\"minutes\":7}").statusCode())
                 .isEqualTo(400);
+    }
+
+    @Test
+    void theFridgesAlertsAreChoicesWithTheirDefaults() throws Exception {
+        jdbc.update("DELETE FROM events");
+        events.add("Refrigerator/Fridge", "contact", "closed");
+        events.add("Refrigerator/Freezer", "contact", "closed");
+        events.add("Refrigerator/Fridge", "temperature", "43 F");
+        events.add("Refrigerator/Freezer", "temperature", "5 F");
+        String list = send("GET", "/api/devices", null, null).body();
+
+        // The defaults from application.properties: fridge door 1 min, freezer 2, fridge too warm above 45 °F, freezer 10.
+        assertThat(list).contains("\"key\":\"open-for:Fridge\",\"label\":\"Fridge door: alert if open longer than\",\"value\":\"\"",
+                "{\"value\":\"\",\"label\":\"1 min (default)\"}",
+                "{\"value\":\"\",\"label\":\"2 min (default)\"}",
+                "\"key\":\"too-warm:Fridge\",\"label\":\"Fridge: alert when warmer than\"",
+                "{\"value\":\"\",\"label\":\"45 °F (default)\"}",
+                "{\"value\":\"\",\"label\":\"10 °F (default)\"}",
+                "{\"value\":\"off\",\"label\":\"Never\"}",
+                "\"key\":\"offline\",\"label\":\"Alert when it stops reporting for\"",
+                "{\"value\":\"\",\"label\":\"30 min (default)\"}");
+
+        long fridge = idOf("Refrigerator");
+        HttpResponse<String> saved = send("POST", "/api/devices/" + fridge, "4821",
+                "{\"action\":\"setting\",\"key\":\"too-warm:Fridge\",\"value\":\"41\"}");
+        assertThat(saved.statusCode()).isEqualTo(200);
+        assertThat(saved.body()).contains("Refrigerator: saved.", "\"key\":\"too-warm:Fridge\",\"label\":\"Fridge: alert when warmer than\",\"value\":\"41\"");
+        assertThat(send("POST", "/api/devices/" + fridge, null, "{\"action\":\"setting\",\"key\":\"offline\",\"value\":\"off\"}")
+                .statusCode()).as("needs the PIN").isEqualTo(401);
+        assertThat(send("POST", "/api/devices/" + fridge, "4821", "{\"action\":\"setting\",\"key\":\"offline\",\"value\":\"45\"}")
+                .statusCode()).isEqualTo(400);
     }
 
     @Test

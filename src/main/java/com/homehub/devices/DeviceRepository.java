@@ -2,19 +2,23 @@ package com.homehub.devices;
 
 import java.time.Instant;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
+import java.util.TreeMap;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
+import tools.jackson.databind.json.JsonMapper;
 
 /** The devices table (V2__devices.sql). */
 @Repository
 public class DeviceRepository {
 
     private static final String COLUMNS = "id, ha_device_id, name, ha_name, room, manufacturer, model, kind, status, "
-            + "entities, readings, in_home_assistant, first_seen, confirmed_at, open_for_minutes";
+            + "entities, readings, in_home_assistant, first_seen, confirmed_at, open_for_minutes, alert_choices";
 
     private static final RowMapper<Device> ROW_MAPPER = (rs, i) -> new Device(
             rs.getLong("id"), rs.getString("ha_device_id"), rs.getString("name"), rs.getString("ha_name"),
@@ -24,7 +28,8 @@ public class DeviceRepository {
             rs.getInt("in_home_assistant") == 1,
             Instant.parse(rs.getString("first_seen")),
             rs.getString("confirmed_at") == null ? null : Instant.parse(rs.getString("confirmed_at")),
-            rs.getObject("open_for_minutes") == null ? null : rs.getInt("open_for_minutes"));
+            rs.getObject("open_for_minutes") == null ? null : rs.getInt("open_for_minutes"),
+            choices(rs.getString("alert_choices")));
 
     private final JdbcTemplate jdbc;
 
@@ -69,6 +74,21 @@ public class DeviceRepository {
 
     private static String status(Device.Status status) {
         return status.name().toLowerCase(Locale.ROOT);
+    }
+
+    /** The household's alert choices for an appliance (#100); an empty map clears them all. */
+    public void updateAlertChoices(long id, Map<String, String> choices) {
+        jdbc.update("UPDATE devices SET alert_choices = ? WHERE id = ?",
+                choices.isEmpty() ? null : JSON.writeValueAsString(new TreeMap<>(choices)), id);
+    }
+
+    private static final JsonMapper JSON = JsonMapper.builder().build();
+
+    private static Map<String, String> choices(String json) {
+        if (json == null || json.isBlank()) return Map.of();
+        Map<String, String> choices = new LinkedHashMap<>();
+        JSON.readValue(json, Map.class).forEach((k, v) -> { if (k != null && v != null) choices.put(k.toString(), v.toString()); });
+        return Map.copyOf(choices);
     }
 
     private static String readings(Device d) {

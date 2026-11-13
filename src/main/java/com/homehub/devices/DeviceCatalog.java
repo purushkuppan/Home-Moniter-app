@@ -60,8 +60,8 @@ public class DeviceCatalog implements EntityDirectory, DeviceAlertSettings {
 
     /** Lookups for the connector and the alerts, rebuilt after every change; read without locking. */
     private record Index(Set<String> recorded, Set<String> hidden, Map<String, String> names, Set<String> onlyOfKind,
-                         Map<String, Duration> openFor) {
-        static final Index EMPTY = new Index(Set.of(), Set.of(), Map.of(), Set.of(), Map.of());
+                         Map<String, Duration> openFor, Map<String, Map<String, String>> choices) {
+        static final Index EMPTY = new Index(Set.of(), Set.of(), Map.of(), Set.of(), Map.of(), Map.of());
     }
 
     private volatile Index index = Index.EMPTY;
@@ -153,7 +153,7 @@ public class DeviceCatalog implements EntityDirectory, DeviceAlertSettings {
             List<String> entityIds = entities.stream().map(DeviceKinds.EntityInfo::entityId).toList();
             List<Device.Reading> readings = DeviceKinds.readingsOf(kind, entities);
             Device fromHa = new Device(0, haId, haName, haName, room, blankToNull(text(d.get("manufacturer"))),
-                    blankToNull(text(d.get("model"))), kind, Device.Status.NEW, entityIds, readings, true, now, null, null);
+                    blankToNull(text(d.get("model"))), kind, Device.Status.NEW, entityIds, readings, true, now, null, null, Map.of());
             // Readings already shown under one name of their own (homehub.connectors.homeassistant.names, e.g.
             // "Back door"): that is what the household calls the device, so the Devices list uses it too.
             String shownAs = commonName(readings);
@@ -171,7 +171,7 @@ public class DeviceCatalog implements EntityDirectory, DeviceAlertSettings {
             String name = shownAs != null ? shownAs : haName;
             Device added = alreadyWatched
                     ? new Device(0, haId, name, haName, room, fromHa.manufacturer(), fromHa.model(), kind,
-                    Device.Status.CONFIRMED, entityIds, readings, true, now, now, null)
+                    Device.Status.CONFIRMED, entityIds, readings, true, now, now, null, Map.of())
                     : fromHa;
             repository.insert(added);
             found.add(added);
@@ -182,7 +182,7 @@ public class DeviceCatalog implements EntityDirectory, DeviceAlertSettings {
             if (!seen.contains(d.haDeviceId()) && d.inHomeAssistant()) {
                 repository.updateFromHomeAssistant(new Device(d.id(), d.haDeviceId(), d.name(), d.haName(), d.room(),
                         d.manufacturer(), d.model(), d.kind(), d.status(), d.entities(), d.readings(), false,
-                        d.firstSeen(), d.confirmedAt(), d.openForMinutes()));
+                        d.firstSeen(), d.confirmedAt(), d.openForMinutes(), d.alertChoices()));
             }
         }
 
@@ -258,10 +258,89 @@ public class DeviceCatalog implements EntityDirectory, DeviceAlertSettings {
     @Override
     public Optional<Duration> openFor(String device) {
         if (device == null) return Optional.empty();
+        // One door of an appliance ("Refrigerator/Fridge"): its choice on the Devices list.
+        Optional<String> part = choice(device, "open-for:");
+        if (part.isPresent()) return part.map(v -> v.equals("off") ? Duration.ZERO : Duration.ofMinutes(Long.parseLong(v)));
         String key = device.trim().toLowerCase(Locale.ROOT);
         Duration own = index.openFor().get(key);
         if (own == null && key.contains("/")) own = index.openFor().get(key.substring(0, key.indexOf('/')));
         return Optional.ofNullable(own);
+    }
+
+    @Override
+    public Optional<Double> tooWarm(String device) {
+        return choice(device, "too-warm:").map(v -> v.equals("off") ? Double.NaN : Double.valueOf(v));
+    }
+
+    @Override
+    public Optional<Boolean> finished(String device) {
+        return choice(device, "finished").map(v -> v.equals("on"));
+    }
+
+    @Override
+    public Optional<Duration> offlineAfter(String device) {
+        return choice(device, "offline").map(v -> v.equals("off") ? Duration.ZERO : Duration.ofMinutes(Long.parseLong(v)));
+    }
+
+    /**
+     * The choice for a reading or device label: "Refrigerator/Fridge" with "too-warm:" looks up "too-warm:Fridge" on
+     * the Refrigerator; "Washer" with "finished" looks up "finished" on the Washer.
+     */
+    private Optional<String> choice(String label, String prefix) {
+        if (label == null) return Optional.empty();
+        String trimmed = label.trim();
+        int slash = trimmed.indexOf('/');
+        String main = (slash < 0 ? trimmed : trimmed.substring(0, slash)).toLowerCase(Locale.ROOT);
+        Map<String, String> choices = index.choices().get(main);
+        if (choices == null) return Optional.empty();
+        if (!prefix.endsWith(":")) return Optional.ofNullable(choices.get(prefix));
+        if (slash < 0) return Optional.empty();
+        String part = trimmed.substring(slash + 1).trim().toLowerCase(Locale.ROOT);
+        return choices.entrySet().stream()
+                .filter(c -> c.getKey().toLowerCase(Locale.ROOT).equals(prefix + part))
+                .map(Map.Entry::getValue).findFirst();
+    }
+
+    /** Offline after: the minutes that can be chosen for an appliance. */
+    static final List<Integer> OFFLINE_CHOICES = List.of(15, 30, 60, 120);
+
+    /**
+     * An appliance alert choice (#100): {@code open-for:<part>} (minutes from {@link #OPEN_FOR_CHOICES}, or off),
+     * {@code too-warm:<part>} (a temperature in the reading's unit, or off), {@code finished} (on or off),
+     * {@code offline} (minutes from {@link #OFFLINE_CHOICES}, or off). An empty value goes back to the default.
+     */
+    public synchronized Device setChoice(long id, String key, String value) {
+        Device d = find(id);
+        if (d.status() != Device.Status.CONFIRMED) throw new IllegalArgumentException("Confirm the device first.");
+        String k = key == null ? "" : key.trim();
+        String v = value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+        boolean valid = v.isEmpty() || switch (k.contains(":") ? k.substring(0, k.indexOf(':') + 1) : k) {
+            case "open-for:" -> validPart(k) && (v.equals("off") || isInt(v) && OPEN_FOR_CHOICES.contains(Integer.parseInt(v)) && !v.equals("0"));
+            case "too-warm:" -> validPart(k) && (v.equals("off") || isNumber(v) && Math.abs(Double.parseDouble(v)) <= 150);
+            case "finished" -> v.equals("on") || v.equals("off");
+            case "offline" -> v.equals("off") || isInt(v) && OFFLINE_CHOICES.contains(Integer.parseInt(v));
+            default -> false;
+        };
+        if (!valid) throw new IllegalArgumentException("That isn't a choice for " + d.name() + ".");
+        Map<String, String> choices = new HashMap<>(d.alertChoices());
+        if (v.isEmpty()) choices.remove(k);
+        else choices.put(k, v);
+        repository.updateAlertChoices(id, choices);
+        reindex();
+        return find(id);
+    }
+
+    private static boolean validPart(String key) {
+        String part = key.substring(key.indexOf(':') + 1);
+        return !part.isBlank() && part.length() <= 40 && !part.contains("/");
+    }
+
+    private static boolean isInt(String s) {
+        return s.matches("\\d{1,4}");
+    }
+
+    private static boolean isNumber(String s) {
+        return s.matches("-?\\d{1,3}(\\.\\d{1,2})?");
     }
 
     /** The one name all these readings are shown under (name overrides), or null. */
@@ -280,6 +359,7 @@ public class DeviceCatalog implements EntityDirectory, DeviceAlertSettings {
         Set<String> recorded = new HashSet<>(), hidden = new HashSet<>(), only = new HashSet<>();
         Map<String, String> names = new HashMap<>();
         Map<String, Duration> openFor = new HashMap<>();
+        Map<String, Map<String, String>> choices = new HashMap<>();
         for (Device d : repository.all()) {
             if (d.status() == Device.Status.HIDDEN) {
                 hidden.addAll(d.entities());
@@ -287,6 +367,7 @@ public class DeviceCatalog implements EntityDirectory, DeviceAlertSettings {
             }
             d.entities().forEach(id -> names.put(id, d.name()));
             if (d.openForMinutes() != null) openFor.put(d.name().toLowerCase(Locale.ROOT), Duration.ofMinutes(d.openForMinutes()));
+            if (!d.alertChoices().isEmpty()) choices.put(d.name().toLowerCase(Locale.ROOT), d.alertChoices());
             if (d.status() != Device.Status.CONFIRMED || !d.inHomeAssistant()) continue;
             Map<String, Integer> perKind = new HashMap<>();
             d.readings().forEach(r -> perKind.merge(r.kindKey(), 1, Integer::sum));
@@ -296,7 +377,8 @@ public class DeviceCatalog implements EntityDirectory, DeviceAlertSettings {
             }
         }
         Index before = index;
-        index = new Index(Set.copyOf(recorded), Set.copyOf(hidden), Map.copyOf(names), Set.copyOf(only), Map.copyOf(openFor));
+        index = new Index(Set.copyOf(recorded), Set.copyOf(hidden), Map.copyOf(names), Set.copyOf(only), Map.copyOf(openFor),
+                Map.copyOf(choices));
         if (!before.recorded().equals(index.recorded()) || !before.hidden().equals(index.hidden())
                 || !before.names().equals(index.names())) {
             publisher.publishEvent(new DevicesChanged(clock.instant()));

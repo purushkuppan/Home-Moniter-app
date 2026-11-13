@@ -234,6 +234,47 @@ class DeviceCatalogTests {
     }
 
     @Test
+    void anAppliancesAlertsCanBeTunedOnTheDevicesList() {
+        catalog.sync(hub().build());
+        Device fridge = named("Refrigerator");
+        assertThat(catalog.openFor("Refrigerator/Fridge")).as("the configured default until changed").isEmpty();
+
+        catalog.setChoice(fridge.id(), "open-for:Fridge", "5");
+        catalog.setChoice(fridge.id(), "open-for:Freezer", "off");
+        catalog.setChoice(fridge.id(), "too-warm:Fridge", "40");
+        catalog.setChoice(fridge.id(), "too-warm:Freezer", "off");
+        catalog.setChoice(fridge.id(), "offline", "60");
+
+        assertThat(catalog.openFor("Refrigerator/Fridge")).contains(java.time.Duration.ofMinutes(5));
+        assertThat(catalog.openFor("refrigerator/fridge")).as("any case").contains(java.time.Duration.ofMinutes(5));
+        assertThat(catalog.openFor("Refrigerator/Freezer")).contains(java.time.Duration.ZERO);
+        assertThat(catalog.tooWarm("Refrigerator/Fridge")).contains(40.0);
+        assertThat(catalog.tooWarm("Refrigerator/Freezer")).hasValueSatisfying(v -> assertThat(v).isNaN());
+        assertThat(catalog.offlineAfter("Refrigerator")).contains(java.time.Duration.ofHours(1));
+        assertThat(catalog.finished("Refrigerator")).isEmpty();
+        assertThat(catalog.all()).filteredOn(d -> d.id() == fridge.id()).singleElement()
+                .satisfies(d -> assertThat(d.alertChoices()).containsEntry("open-for:Fridge", "5").hasSize(5));
+
+        catalog.setChoice(fridge.id(), "too-warm:Fridge", "");   // back to the default
+        assertThat(catalog.tooWarm("Refrigerator/Fridge")).isEmpty();
+    }
+
+    @Test
+    void onlyRealChoicesAreAccepted() {
+        catalog.sync(hub().build());
+        long fridge = named("Refrigerator").id();
+        for (String[] bad : new String[][] {{"open-for:Fridge", "7"}, {"open-for:Fridge", "0"}, {"too-warm:Fridge", "warm"},
+                {"too-warm:Fridge", "999"}, {"finished", "maybe"}, {"offline", "45"}, {"colour", "red"}, {"open-for:", "5"},
+                {"open-for:Fridge/x", "5"}}) {
+            assertThatThrownBy(() -> catalog.setChoice(fridge, bad[0], bad[1])).as(bad[0] + "=" + bad[1])
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+        long phone = named("purushphone").id();
+        assertThatThrownBy(() -> catalog.setChoice(phone, "offline", "30")).as("not confirmed")
+                .hasMessageContaining("Confirm the device first");
+    }
+
+    @Test
     void homeAssistantChangesUpdateTheRoomButNotKudilsChoices() {
         catalog.sync(hub().build());
         Device phone = named("purushphone");

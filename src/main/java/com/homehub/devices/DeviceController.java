@@ -1,7 +1,10 @@
 package com.homehub.devices;
 
+import com.homehub.alerts.AlertProperties;
 import com.homehub.alerts.DefaultAlertProperties;
 import com.homehub.controls.ControlPin;
+import com.homehub.events.EventRepository;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -42,11 +45,12 @@ public class DeviceController {
      */
     public record DeviceView(long id, String name, String suggestedName, String room, String kind, String kindLabel,
                              String maker, String status, List<String> measures, boolean inHomeAssistant,
-                             List<String> alerts, Integer openFor, int defaultOpenFor, List<Integer> openForChoices) {
+                             List<String> alerts, Integer openFor, int defaultOpenFor, List<Integer> openForChoices,
+                             List<Setting> settings) {
     }
 
     /** "confirm" (with name), "hide", "show", or "open-for" (with minutes; null = back to the default). */
-    public record Choice(String action, String name, Integer minutes) {
+    public record Choice(String action, String name, Integer minutes, String key, String value) {
     }
 
     private static final String PIN_HEADER = "X-HomeHub-Pin";
@@ -54,11 +58,16 @@ public class DeviceController {
     private final DeviceCatalog catalog;
     private final ControlPin pin;
     private final DefaultAlertProperties defaults;
+    private final AlertProperties configured;
+    private final EventRepository events;
 
-    public DeviceController(DeviceCatalog catalog, ControlPin pin, DefaultAlertProperties defaults) {
+    public DeviceController(DeviceCatalog catalog, ControlPin pin, DefaultAlertProperties defaults,
+                            AlertProperties configured, EventRepository events) {
         this.catalog = catalog;
         this.pin = pin;
         this.defaults = defaults;
+        this.configured = configured;
+        this.events = events;
     }
 
     @GetMapping
@@ -89,9 +98,11 @@ public class DeviceController {
                 case "hide" -> catalog.hide(id);
                 case "show" -> catalog.unhide(id);
                 case "open-for" -> catalog.setOpenFor(id, choice.minutes());
-                default -> throw new IllegalArgumentException("Choose confirm, hide, show or open-for.");
+                case "setting" -> catalog.setChoice(id, choice.key(), choice.value());
+                default -> throw new IllegalArgumentException("Choose confirm, hide, show, open-for or setting.");
             };
-            String done = action.equals("open-for") ? d.name() + ": " + openForWords(d) + "."
+            String done = action.equals("setting") ? d.name() + ": saved."
+                    : action.equals("open-for") ? d.name() + ": " + openForWords(d) + "."
                     : switch (d.status()) {
                         case CONFIRMED -> d.name() + " is watched now.";
                         case HIDDEN -> d.name() + " is hidden.";
@@ -103,6 +114,94 @@ public class DeviceController {
         } catch (IllegalArgumentException ex) {
             return message(HttpStatus.BAD_REQUEST, ex.getMessage());
         }
+    }
+
+    /**
+     * One alert setting of an appliance (#100), as a choice on the Devices list.
+     *
+     * @param key     what is set: "open-for:Fridge", "too-warm:Freezer", "finished", "offline"
+     * @param label   "Fridge door: alert if open"
+     * @param value   the household's choice, or "" for the default
+     * @param choices what can be chosen; the first ("") is the default, with what it is
+     */
+    public record Setting(String key, String label, String value, List<Option> choices) {
+    }
+
+    public record Option(String value, String label) {
+    }
+
+    /** The alert settings of a confirmed appliance: each door, each temperature, its cycles, going offline. */
+    List<Setting> settingsOf(Device d) {
+        if (d.kind() != DeviceKind.APPLIANCE || d.status() != Device.Status.CONFIRMED) return List.of();
+        String prefix = d.name().toLowerCase(Locale.ROOT) + "/";
+        Map<String, String> doors = new java.util.TreeMap<>(), temperatures = new java.util.TreeMap<>();
+        boolean cycles = false;
+        for (com.homehub.events.Event e : events.latestPerReading()) {
+            String label = e.device() == null ? "" : e.device();
+            String lower = label.toLowerCase(Locale.ROOT);
+            if (lower.startsWith(prefix)) {
+                String part = label.substring(prefix.length());
+                if ("contact".equals(e.type())) doors.put(part, label);
+                if ("temperature".equals(e.type())) temperatures.put(part, unitOf(e.value()));
+            } else if (lower.equals(d.name().toLowerCase(Locale.ROOT)) && "machineState".equals(e.type())) {
+                cycles = true;
+            }
+        }
+        List<Setting> settings = new ArrayList<>();
+        doors.forEach((part, label) -> {
+            Duration own = configuredFor(configured.doorOpen(), label);
+            long minutes = (own != null ? own : defaults.openFor()).toMinutes();
+            List<Option> options = new ArrayList<>(List.of(new Option("", minutes + " min (default)"),
+                    new Option("off", "Never")));
+            DeviceCatalog.OPEN_FOR_CHOICES.stream().filter(m -> m > 0)
+                    .forEach(m -> options.add(new Option(String.valueOf(m), m + " min")));
+            settings.add(new Setting("open-for:" + part, part + " door: alert if open longer than", choiceOf(d, "open-for:" + part), options));
+        });
+        temperatures.forEach((part, unit) -> {
+            Double own = configuredFor(configured.tooWarm(), d.name() + "/" + part);
+            List<Option> options = new ArrayList<>();
+            options.add(new Option("", own == null ? "Never (default)" : plain(own) + unit + " (default)"));
+            options.add(new Option("off", "Never"));
+            double center = own != null ? own : (unit.contains("C") ? 4 : 40);
+            for (int t = (int) Math.round(center) - 5; t <= Math.round(center) + 5; t++) {
+                options.add(new Option(String.valueOf(t), t + unit));
+            }
+            settings.add(new Setting("too-warm:" + part, part + ": alert when warmer than", choiceOf(d, "too-warm:" + part), options));
+        });
+        if (cycles) {
+            boolean own = configured.finished().stream().anyMatch(m -> m.equalsIgnoreCase(d.name()));
+            settings.add(new Setting("finished", "When a cycle finishes", choiceOf(d, "finished"), List.of(
+                    new Option("", (own ? "Tell me" : "Don't tell me") + " (default)"),
+                    new Option("on", "Tell me"), new Option("off", "Don't tell me"))));
+        }
+        Duration offline = configuredFor(configured.offline(), d.name());
+        List<Option> options = new ArrayList<>(List.of(
+                new Option("", (offline == null ? "Never" : offline.toMinutes() + " min") + " (default)"),
+                new Option("off", "Never")));
+        DeviceCatalog.OFFLINE_CHOICES.forEach(m -> options.add(new Option(String.valueOf(m), m + " min")));
+        settings.add(new Setting("offline", "Alert when it stops reporting for", choiceOf(d, "offline"), options));
+        return settings;
+    }
+
+    private static String choiceOf(Device d, String key) {
+        return d.alertChoices().entrySet().stream().filter(c -> c.getKey().equalsIgnoreCase(key))
+                .map(Map.Entry::getValue).findFirst().orElse("");
+    }
+
+    /** A configured setting by dashboard name, whatever its case ("Refrigerator/Fridge"). */
+    private static <T> T configuredFor(Map<String, T> configured, String label) {
+        return configured.entrySet().stream().filter(c -> c.getKey().equalsIgnoreCase(label))
+                .map(Map.Entry::getValue).findFirst().orElse(null);
+    }
+
+    /** "43 F" -> " °F" */
+    private static String unitOf(String value) {
+        String unit = value == null ? "" : value.replaceAll("^[-0-9.\\s]+", "").trim();
+        return unit.equalsIgnoreCase("F") || unit.equalsIgnoreCase("C") ? " °" + unit.toUpperCase(Locale.ROOT) : unit.isEmpty() ? "" : " " + unit;
+    }
+
+    private static String plain(double n) {
+        return java.math.BigDecimal.valueOf(n).stripTrailingZeros().toPlainString();
     }
 
     /** "Alert when open longer than 10 min (default)", "No alert when left open". */
@@ -139,7 +238,8 @@ public class DeviceController {
         return new DeviceView(d.id(), d.name(), suggestedName(d), d.room(), d.kind().name().toLowerCase(Locale.ROOT),
                 d.kind().label, maker, d.status().name().toLowerCase(Locale.ROOT), List.copyOf(measures), d.inHomeAssistant(),
                 alertsOf(d), d.openForMinutes(), (int) defaults.openFor().toMinutes(),
-                d.kind() == DeviceKind.OPENING || d.kind() == DeviceKind.GARAGE ? DeviceCatalog.OPEN_FOR_CHOICES : List.of());
+                d.kind() == DeviceKind.OPENING || d.kind() == DeviceKind.GARAGE ? DeviceCatalog.OPEN_FOR_CHOICES : List.of(),
+                settingsOf(d));
     }
 
     /** "Kitchen leak sensor", from the room and the kind; the Home Assistant name when there is no room. */
