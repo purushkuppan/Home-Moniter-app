@@ -875,6 +875,8 @@ function doorName(name) {
 }
 // Events HomeHub writes itself: shown in the activity list, never as a device reading.
 const ALERT_TYPES = ['alert', 'alertCleared', 'notice', 'alertAck'];
+// The post-deploy self-check's test event (#124): deleted again at once, never shown.
+const HIDDEN_TYPES = new Set(['selfCheck']);
 const NOT_READINGS = new Set(['command', ...ALERT_TYPES]);
 
 function prettyType(type) {
@@ -1487,8 +1489,8 @@ async function load() {
     ]);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     if (!latestRes.ok) throw new Error('HTTP ' + latestRes.status);
-    events = await res.json();
-    current = await latestRes.json();
+    events = (await res.json()).filter(e => !HIDDEN_TYPES.has(e.type));
+    current = (await latestRes.json()).filter(e => !HIDDEN_TYPES.has(e.type));
 
     const newIds = new Set(lastSeenId === null ? [] : events.filter(e => e.id > lastSeenId).map(e => e.id));
     if (events.length) lastSeenId = Math.max(lastSeenId ?? 0, ...events.map(e => e.id));
@@ -1535,7 +1537,7 @@ function showVersion(version) {
 
 /** One event pushed by the server the moment it was saved. */
 function addLiveEvent(e) {
-  if (events.some(x => x.id === e.id)) return;
+  if (HIDDEN_TYPES.has(e.type) || events.some(x => x.id === e.id)) return;
   events = [e, ...events].sort((a, b) => b.id - a.id).slice(0, MAX_EVENTS);
   updateCurrent(e);
   lastSeenId = Math.max(lastSeenId ?? 0, e.id);

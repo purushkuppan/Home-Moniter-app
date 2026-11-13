@@ -41,6 +41,9 @@ jobs:
       - name: Test the firewall script
         # With a stand-in ufw that only records the rules it is asked to add or remove.
         run: bash deploy/test/firewall-test.sh
+      - name: Test the deploy script
+        # install-release.sh with stand-in systemctl and curl: health check, alerts check, rollback and its note.
+        run: bash deploy/test/install-release-test.sh
       - name: Test the ntfy setup script
         # With stand-in curl, dpkg, systemctl, ufw and ntfy, and temporary folders for /etc and /var.
         run: bash deploy/test/ntfy-setup-test.sh

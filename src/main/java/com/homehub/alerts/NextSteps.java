@@ -44,6 +44,7 @@ public final class NextSteps {
             case "power" -> "Check the breaker panel and whether the neighbours have power. Keep the fridge and freezer shut.";
             case "internet" -> "Restart the modem and router. Phones get Kudil alerts again once it is back.";
             case "hubbattery" -> "Plug in the hub laptop's charger if the power is back, or it will shut down.";
+            case "deploy" -> "Nothing to do at home. Check the failed release on GitHub before the next merge.";
             case "batteryhealth" -> "Check the hub laptop's battery for swelling, and plan to replace it.";
             default -> null;
         };

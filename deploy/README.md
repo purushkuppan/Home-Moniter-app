@@ -13,7 +13,12 @@
    - installs it to `/opt/homehub/releases/<version>`
    - points `/opt/homehub/current` at it
    - restarts the service and checks `/actuator/health`
-   - if the check fails, switches back to the previous release and removes the broken one
+   - then checks that **alerts still work** (`POST /api/selfcheck`, #124): a test event is stored and reaches the
+     dashboard's live stream, a pretend leak raises a critical alert (nothing is sent, nothing is kept), and Home
+     Assistant is connected. It tries for up to a minute, since Home Assistant takes a few seconds to connect
+   - if either check fails, switches back to the previous release, removes the broken one, and leaves a note in
+     `/opt/homehub/data/deploy-rolled-back`; the previous release then sends **one phone alert** ("The Kudil update
+     to v0.31.0 was undone: alerts check failed: rules. …") and removes the note
 5. A tag that is **not newer** than the version already running is released on GitHub but not deployed.
    Pushing old tags is therefore harmless.
 
