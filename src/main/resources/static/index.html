@@ -412,12 +412,29 @@
   .btn.primary:hover, .btn.on:hover { color: var(--on-accent); opacity: .9; }
   .btn:disabled { opacity: .5; cursor: not-allowed; }
   .seg { display: inline-flex; gap: 4px; }
+  /* What happened to the last change (issue 114): Sending…, Done with the time, or didn't respond */
+  .btn.sending:disabled { opacity: 1; cursor: progress; }
+  .control-status { flex-basis: 100%; text-align: right; font-size: 13px; color: var(--muted); }
+  .control-status.done, .quick-sub.done { color: var(--ok); }
+  .control-status.failed, .quick-sub.failed { color: var(--bad); }
   .toast {
     position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 20;
+    display: flex; align-items: center; gap: 12px;
     max-width: calc(100% - 32px); padding: 10px 16px; border-radius: 10px; font-size: 14px;
     background: var(--text); color: var(--bg); box-shadow: var(--shadow);
   }
+  .toast[hidden] { display: none; }
   .toast.error { background: var(--bad); color: var(--on-bad); }
+  .toast-action {
+    flex: none; min-height: var(--tap); margin: -10px -8px -10px 0; padding: 0 10px; border: 0; background: none;
+    color: inherit; font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer;
+  }
+  /* Kudil's own question before a risky change: the consequence in words, sizes in rem so large text grows */
+  dialog.confirm-sheet { width: min(400px, calc(100% - 24px)); padding: 20px; }
+  .confirm-sheet h3 { font-size: 1.375rem; line-height: 1.3; }
+  .confirm-sheet .confirm-text { margin: 8px 0 0; color: var(--muted); font-size: 1rem; line-height: 1.5; }
+  .confirm-sheet menu { flex-wrap: wrap; margin-top: 20px; }
+  .confirm-sheet menu .btn { min-height: var(--tap); padding: 10px 18px; font-size: 1rem; font-weight: 600; }
   dialog {
     width: min(340px, calc(100% - 32px)); padding: 20px; border: 1px solid var(--border);
     border-radius: var(--radius); background: var(--surface); color: var(--text); box-shadow: var(--shadow);
@@ -661,6 +678,16 @@
     <menu>
       <button class="btn" type="button" id="pinCancel">Cancel</button>
       <button class="btn primary" type="submit">Unlock</button>
+    </menu>
+  </form>
+</dialog>
+<dialog id="confirmSheet" class="sheet confirm-sheet" aria-labelledby="confirmTitle" aria-describedby="confirmText">
+  <form method="dialog">
+    <h3 id="confirmTitle"></h3>
+    <p class="confirm-text" id="confirmText"></p>
+    <menu>
+      <button class="btn" type="submit" value="cancel" autofocus>Cancel</button>
+      <button class="btn primary" type="submit" value="ok" id="confirmOk"></button>
     </menu>
   </form>
 </dialog>
@@ -1485,7 +1512,10 @@ async function checkVersion() {
     if (!res.ok) return;
     const { started, version } = await res.json();
     if (serverStarted && started !== serverStarted) {
-      if (!$('pinDialog').open && !$('settings').open) location.reload();   // otherwise: reload on the next check
+      // Not in the middle of something: otherwise reload on the next check.
+      const busy = $('pinDialog').open || $('settings').open || $('confirmSheet').open
+          || [...controlStatus.values()].some(s => s.state === 'sending');
+      if (!busy) location.reload();
       return;
     }
     serverStarted = started;
@@ -1705,10 +1735,16 @@ const PIN_HEADER = 'X-HomeHub-Pin';
 const AUTO_LOCK_MS = 10 * 60 * 1000;
 const CYCLE_VERBS = { run: 'Start', pause: 'Pause', stop: 'Stop' };
 
+const CONFIRM_POLL_MS = 1500;      // how often to ask whether the device has changed
+const CONFIRM_TIMEOUT_MS = 15000;  // after this long without the new value, the device didn't respond
+const UNDO_MS = 5000;              // how long a normal change can be undone from the toast
+const STATUS_MS = 30000;           // how long Done or Didn't respond stays next to the control
+
 let controlsView = { enabled: false, controls: [] };
 let controlPin = null;   // kept only in memory: never stored, gone when the tab closes
 let lockTimer = null;
 let pinResolve = null;
+const controlStatus = new Map();   // control id -> { state: 'sending' | 'done' | 'failed', value, text }
 
 async function loadControls() {
   try {
@@ -1724,6 +1760,22 @@ async function loadControls() {
 function optionLabel(option) {
   const text = String(option).replace(/_/g, ' ');
   return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/** A number control's value as shown: in the chosen unit when it is a temperature, e.g. "3.3 °C" for 38 °F. */
+function numberText(c, v) {
+  const tempUnit = /^°?\s*([FC])$/i.exec(c.unit || '');
+  const t = tempUnit ? toChosenUnit(Number(v), tempUnit[1]) : null;
+  return t && t.converted ? oneDecimal(t.n) + ' °' + t.unit : v + (c.unit ? ' ' + c.unit : '');
+}
+
+/** A control's value in words, for "Done · On · 9:41 PM". */
+function stateText(c, v) {
+  if (c.kind === 'number') return numberText(c, v);
+  if (c.kind === 'switch') return v === 'on' ? 'On' : 'Off';
+  if (c.kind === 'cycle') return (CYCLE_STATES[v] || [optionLabel(v)])[0];
+  if (c.kind === 'button') return 'Pressed';
+  return optionLabel(v);
 }
 
 function numberValues(c) {
@@ -1781,7 +1833,8 @@ const CYCLE_STATES = { run: ['Running', 'info'], pause: ['Paused', 'warn'], stop
 
 /**
  * Tiles on Home for what is changed most: a washer's or dryer's cycle (one button: Start or Pause) and temperature
- * settings (tap for the full controls). Every change still asks for the PIN and a confirmation, like on Controls.
+ * settings (tap for the full controls). A change works as on Controls: the PIN, a question only when it is risky
+ * (Start), then Sending… until the machine reports it.
  */
 function renderQuick() {
   const controls = controlsView.controls || [];
@@ -1802,15 +1855,17 @@ function cycleTile(c) {
   const [state, tone] = CYCLE_STATES[c.value] || [optionLabel(c.value || 'unknown'), 'idle'];
   const running = c.value === 'run';
   const next = running ? 'pause' : 'run';
+  const status = controlStatus.get(c.id);
+  const sending = isSending(c);
   const tile = el('div', 'quick-tile');
   const names = el('div');
-  names.append(el('span', 'quick-name', c.device), el('span', 'quick-sub', running ? 'Cycle running' : 'Cycle'));
-  const action = el('button', 'btn', running ? 'Pause' : 'Start');
+  names.append(el('span', 'quick-name', c.device), status && status.text
+      ? el('span', 'quick-sub ' + status.state, status.text)
+      : el('span', 'quick-sub', running ? 'Cycle running' : 'Cycle'));
+  const action = el('button', 'btn' + (sending ? ' sending' : ''), sending ? 'Sending…' : running ? 'Pause' : 'Start');
   action.type = 'button';
-  action.disabled = !controlsView.enabled || !c.options.includes(next);
-  action.onclick = () => {
-    if (confirm(CYCLE_VERBS[next] + ' the ' + c.device.toLowerCase() + '?')) sendCommand(c, next);
-  };
+  action.disabled = sending || !controlsView.enabled || !c.options.includes(next);
+  action.onclick = () => changeControl(c, next);
   tile.append(tileTop(iconFor(c.device), state, tone), names, action);
   return tile;
 }
@@ -1824,7 +1879,8 @@ function numberTile(c) {
   tile.setAttribute('aria-label', c.label + ' ' + value + ', change in Controls');
   const names = el('span');
   names.append(el('span', 'quick-name', c.label), el('span', 'quick-sub', c.device + ' · set to'));
-  tile.append(tileTop(tempUnit ? 'thermo' : iconFor(c.device), 'Set', 'info'), names, el('span', 'quick-value', value));
+  tile.append(tileTop(tempUnit ? 'thermo' : iconFor(c.device), isSending(c) ? 'Sending…' : 'Set', 'info'), names,
+      el('span', 'quick-value', value));
   tile.onclick = () => openControls(c.device);
   return tile;
 }
@@ -1832,53 +1888,45 @@ function numberTile(c) {
 function controlRow(c) {
   const row = el('div', 'control');
   const actions = el('div', 'control-actions');
-  const disabled = !controlsView.enabled;
-  const button = (text, onClick, extra = '') => {
-    const b = el('button', 'btn small ' + extra, text);
+  const status = controlStatus.get(c.id);
+  const sending = isSending(c);
+  const disabled = !controlsView.enabled || sending;   // one change at a time: no double send
+  // `sends` is the value a button sends; while it is on its way, that button says Sending… (null: any value).
+  const button = (text, onClick, extra = '', sends = null) => {
+    const busy = sending && (sends === null || status.value === sends);
+    const b = el('button', 'btn small ' + extra + (busy ? ' sending' : ''), busy ? 'Sending…' : text);
     b.type = 'button';
     b.disabled = disabled;
     b.onclick = onClick;
     return b;
   };
+  // While a choice is on its way, the (disabled) list keeps showing it; the device's own state shows once it reports.
+  const chosen = sending ? status.value : c.value;
 
   if (c.kind === 'number') {
     // The options keep the device's own numbers as their values, so what is sent to Home Assistant is never a
     // converted number; only the text shows the chosen unit.
-    const unit = c.unit ? ' ' + c.unit : '';
-    const tempUnit = /^°?\s*([FC])$/i.exec(c.unit || '');
-    const shown = v => {
-      const t = tempUnit ? toChosenUnit(Number(v), tempUnit[1]) : null;
-      return t && t.converted ? oneDecimal(t.n) + ' °' + t.unit : v + unit;
-    };
-    // In the confirmation, a converted value also names the device's own setting: "3.3 °C (38 °F)".
-    const both = v => shown(v) === v + unit ? v + unit : shown(v) + ' (' + v + unit + ')';
     const select = el('select');
     select.disabled = disabled;
     select.setAttribute('aria-label', c.label);
     for (const v of numberValues(c)) {
-      const o = el('option', '', shown(v));
+      const o = el('option', '', numberText(c, v));
       o.value = v;
-      if (Number(c.value) === v) o.selected = true;
+      if (Number(chosen) === v) o.selected = true;
       select.append(o);
     }
     actions.append(select, button('Set', () => {
-      if (Number(select.value) === Number(c.value)) return toast(c.label + ' is already ' + shown(c.value) + '.');
-      if (confirm('Set ' + c.label.toLowerCase() + ' to ' + both(select.value) + '?')) sendCommand(c, select.value);
+      if (Number(select.value) === Number(c.value)) return toast(c.label + ' is already ' + numberText(c, c.value) + '.');
+      changeControl(c, select.value);
     }));
   } else if (c.kind === 'switch') {
     const on = c.value === 'on';
-    actions.append(button(on ? 'On' : 'Off', () => {
-      const next = on ? 'off' : 'on';
-      // A plug's only switch is its power: "Turn the indoor smart plug off?" rather than "Turn power off?"
-      const what = c.label === 'Power' ? 'the ' + c.device.toLowerCase() : c.label.toLowerCase();
-      if (confirm('Turn ' + what + ' ' + next + '?')) sendCommand(c, next);
-    }, on ? 'on' : ''));
+    const next = on ? 'off' : 'on';
+    actions.append(button(on ? 'On' : 'Off', () => changeControl(c, next), on ? 'on' : '', next));
   } else if (c.kind === 'cycle') {
     const seg = el('div', 'seg');
     for (const option of ['run', 'pause', 'stop'].filter(o => c.options.includes(o))) {
-      seg.append(button(CYCLE_VERBS[option], () => {
-        if (confirm(CYCLE_VERBS[option] + ' the ' + c.device.toLowerCase() + '?')) sendCommand(c, option);
-      }, c.value === option ? 'on' : ''));
+      seg.append(button(CYCLE_VERBS[option], () => changeControl(c, option), c.value === option ? 'on' : '', option));
     }
     actions.append(seg);
   } else if (c.kind === 'select') {
@@ -1888,41 +1936,166 @@ function controlRow(c) {
     for (const option of c.options) {
       const o = el('option', '', optionLabel(option));
       o.value = option;
-      if (c.value === option) o.selected = true;
+      if (chosen === option) o.selected = true;
       select.append(o);
     }
     actions.append(select, button('Set', () => {
       if (select.value === c.value) return toast(c.label + ' is already ' + optionLabel(c.value).toLowerCase() + '.');
-      if (confirm('Set ' + c.label.toLowerCase() + ' to ' + optionLabel(select.value).toLowerCase() + '?')) sendCommand(c, select.value);
+      changeControl(c, select.value);
     }));
   } else if (c.kind === 'button') {
-    actions.append(button('Press', () => {
-      if (confirm(c.label + '?')) sendCommand(c, '');
-    }));
+    actions.append(button('Press', () => changeControl(c, ''), '', ''));
   }
 
   row.append(el('span', 'label', c.label), actions);
   if (c.note) row.append(el('span', 'note', c.note));
+  if (status && status.text) row.append(el('span', 'control-status ' + status.state, status.text));
   return row;
 }
 
-async function sendCommand(c, value) {
-  if (!await ensureUnlocked()) return;
+// ---------------------------------------------------------------- changing a device (#114)
+
+/**
+ * Which changes are risky enough to ask about first. Everything else happens at once and can be undone for a few
+ * seconds. Locks, garage doors and sirens (#37) add their line here: unlocking, opening or closing, sounding.
+ */
+const RISKY = {
+  cycle: v => v === 'run' || v === 'stop',   // starting or stopping a washer or dryer
+  button: () => true                         // a press can't be taken back, e.g. Reset water filter
+};
+
+function isRisky(c, value) {
+  const risky = RISKY[c.kind];
+  return !!risky && risky(value);
+}
+
+function isSending(c) {
+  const status = controlStatus.get(c.id);
+  return !!status && status.state === 'sending';
+}
+
+/** The value to send back for Undo, or null when there is nothing safe to go back to. */
+function undoValue(c) {
+  const v = c.value;
+  if (isRisky(c, v)) return null;   // going back would itself be risky (e.g. Undo of Pause would start the washer)
+  if (c.kind === 'switch') return v === 'on' || v === 'off' ? v : null;
+  if (c.kind === 'number') return v !== '' && v !== null && numberValues(c).includes(Number(v)) ? v : null;
+  if (c.kind === 'select' || c.kind === 'cycle') return c.options.includes(v) ? v : null;
+  return null;
+}
+
+const starting = new Set();   // controls whose change is being asked about or unlocked, before it is sent
+
+/** The PIN is needed for every change; risky ones are asked about first, in Kudil's own sheet. */
+async function changeControl(c, value) {
+  if (isSending(c) || starting.has(c.id)) return;   // a second tap never sends twice
+  starting.add(c.id);
+  const go = (!isRisky(c, value) || await askRisky(c, value)) && await ensureUnlocked();
+  starting.delete(c.id);
+  if (go) sendCommand(c, value, undoValue(c));
+}
+
+/** States the consequence in plain words; resolves true only when the action button is chosen. */
+function askRisky(c, value) {
+  const device = c.device.toLowerCase();
+  let title, text, action;
+  if (c.kind === 'cycle') {
+    action = CYCLE_VERBS[value];
+    title = action + ' the ' + device + '?';
+    text = value === 'run'
+        ? 'The ' + device + ' starts the cycle that is set on the machine. Make sure it is loaded and the door is closed.'
+        : 'The cycle ends now. Starting again begins a new cycle.';
+  } else {
+    action = c.label;
+    title = c.label + '?';
+    text = 'Kudil presses ' + c.label + ' on the ' + device + '. This can\'t be undone.';
+  }
+  $('confirmTitle').textContent = title;
+  $('confirmText').textContent = text;
+  $('confirmOk').textContent = action;
+  const sheet = $('confirmSheet');
+  sheet.returnValue = '';
+  sheet.showModal();   // focus starts on Cancel
+  return new Promise(resolve => sheet.addEventListener('close', () => resolve(sheet.returnValue === 'ok'), { once: true }));
+}
+
+/**
+ * Sends one change and follows it until the device itself reports it: Sending… (the control is disabled), then
+ * Done with the time, or "Didn't respond" after 15 s. The new state never shows before the device confirms it.
+ */
+async function sendCommand(c, value, undoTo = null) {
+  setStatus(c, { state: 'sending', value });
+  let res, body;
   try {
-    const res = await fetch('/api/controls/' + encodeURIComponent(c.id), {
+    res = await fetch('/api/controls/' + encodeURIComponent(c.id), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', [PIN_HEADER]: controlPin },
       body: JSON.stringify({ value })
     });
-    const body = await res.json().catch(() => ({}));
-    if (res.status === 401 || res.status === 429 || res.status === 403) lockControls();
-    if (!res.ok) return toast(body.message || 'That didn\'t work (HTTP ' + res.status + ').', true);
-    toast(body.message ? convertTemps(body.message) : 'Done.');
-    keepUnlocked();
-    setTimeout(loadControls, 1500);   // give the device a moment, then show its new state
+    body = await res.json().catch(() => ({}));
   } catch (err) {
-    toast('Kudil is not reachable.', true);
+    return failed(c, 'Kudil is not reachable.');
   }
+  if (res.status === 401 || res.status === 429 || res.status === 403) {
+    setStatus(c, null);
+    lockControls();
+    return toast(body.message || 'That didn\'t work (HTTP ' + res.status + ').', true);
+  }
+  if (!res.ok) return failed(c, body.message || 'That didn\'t work (HTTP ' + res.status + ').');
+  keepUnlocked();
+  // A press has no state to report back: it is done once Home Assistant has taken it.
+  if (c.kind !== 'button' && !await deviceReports(c, value)) {
+    loadControls();   // show what the device does report
+    return failed(c, null);
+  }
+  setStatus(c, { state: 'done', value, text: 'Done · ' + stateText(c, value) + ' · ' + shortClock.format(new Date()) });
+  const message = body.message ? convertTemps(body.message) : 'Done.';
+  if (undoTo === null) toast(message);
+  else toast(message, false, { label: 'Undo', ms: UNDO_MS, run: () => undoChange(c, undoTo) });
+}
+
+/** Asks Kudil every 1.5 s, for up to 15 s, until the device reports the requested value. */
+async function deviceReports(c, value) {
+  const same = v => c.kind === 'number' ? Number(v) === Number(value) : String(v) === String(value);
+  const until = Date.now() + CONFIRM_TIMEOUT_MS;
+  while (Date.now() < until) {
+    await new Promise(resolve => setTimeout(resolve, CONFIRM_POLL_MS));
+    try {
+      const res = await fetch('/api/controls', { cache: 'no-store' });
+      if (!res.ok) continue;
+      const view = await res.json();
+      const now = (view.controls || []).find(x => x.id === c.id);
+      if (now && same(now.value)) {
+        controlsView = view;   // the refreshed controls, shown with Done
+        return true;
+      }
+    } catch (err) {
+      // Kudil didn't answer this time: keep asking until the time is up.
+    }
+  }
+  return false;
+}
+
+/** Undo from the toast: sends the previous value back the same way, without offering another Undo. */
+async function undoChange(c, value) {
+  const now = (controlsView.controls || []).find(x => x.id === c.id) || c;
+  if (isSending(now) || !await ensureUnlocked()) return;
+  sendCommand(now, value);
+}
+
+function failed(c, reason) {
+  setStatus(c, { state: 'failed', text: reason ? 'Didn\'t work. ' + reason : "Didn't respond. Try again." });
+  toast(reason || c.device + " didn't respond. Try again.", true);
+}
+
+/** Remembers what is happening to a control (kept across refreshes) and shows it; Done and errors fade after a while. */
+function setStatus(c, status) {
+  const old = controlStatus.get(c.id);
+  if (old) clearTimeout(old.timer);
+  if (status) controlStatus.set(c.id, status);
+  else controlStatus.delete(c.id);
+  if (status && status.state !== 'sending') status.timer = setTimeout(() => setStatus(c, null), STATUS_MS);
+  renderControls();
 }
 
 /** Resolves true once the PIN has been accepted (asking for it if needed), false if the user cancels. */
@@ -1980,13 +2153,24 @@ function lockControls() {
 }
 
 let toastTimer = null;
-function toast(message, isError = false) {
+/** A short message at the bottom; `action` adds a button to it, e.g. { label: 'Undo', ms: UNDO_MS, run }. */
+function toast(message, isError = false, action = null) {
   const t = $('toast');
-  t.textContent = message;
+  t.replaceChildren(el('span', '', message));
+  if (action) {
+    const b = el('button', 'toast-action', action.label);
+    b.type = 'button';
+    b.onclick = () => {
+      clearTimeout(toastTimer);
+      t.hidden = true;
+      action.run();
+    };
+    t.append(b);
+  }
   t.className = 'toast' + (isError ? ' error' : '');
   t.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { t.hidden = true; }, isError ? 6000 : 3500);
+  toastTimer = setTimeout(() => { t.hidden = true; }, action ? action.ms : isError ? 6000 : 3500);
 }
 
 // ---------------------------------------------------------------- can't reach home (#112)

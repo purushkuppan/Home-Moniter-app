@@ -71,7 +71,7 @@ class EventControllerTests {
         assertThat(page).contains("const UNIT_KEY = 'homehub.tempUnit'",
                 "try { localStorage.setItem(UNIT_KEY, unit); } catch");
         // Controls keep the device's own number as the value that is sent; only the label is converted.
-        assertThat(page).contains("o.value = v;", "sendCommand(c, select.value)");
+        assertThat(page).contains("o.value = v;", "changeControl(c, select.value)");
     }
 
     @Test
@@ -96,8 +96,8 @@ class EventControllerTests {
         String nav = page.substring(page.indexOf("<nav class=\"tabs\" id=\"tabs\""));
         assertThat(nav).containsSubsequence("data-tab=\"status\"", ">Home<", "id=\"homeBadge\"",
                 "data-tab=\"controls\"", ">Controls<", "data-tab=\"activity\"", ">Activity<");
-        // Quick controls change devices only through the PIN and a confirmation, like the Controls section.
-        assertThat(page).contains("if (confirm(CYCLE_VERBS[next] + ' the ' + c.device.toLowerCase() + '?')) sendCommand(c, next);");
+        // Quick controls change devices the same way as the Controls section (PIN, a question only when risky).
+        assertThat(page).contains("action.onclick = () => changeControl(c, next);");
     }
 
     @Test
@@ -217,7 +217,7 @@ class EventControllerTests {
         // Plug: On/Off with its watts, and its power switch in Controls behind the PIN.
         assertThat(page).contains("plug:    '", "'Using ' + formatValue('power', watts.value)",
                 "const WATTS = /^(-?\\d+(?:\\.\\d+)?) ?W$/i;", "power: 'Power use'",
-                "const what = c.label === 'Power' ? 'the ' + c.device.toLowerCase() : c.label.toLowerCase();");
+                "actions.append(button(on ? 'On' : 'Off', () => changeControl(c, next), on ? 'on' : '', next));");
     }
 
     @Test
