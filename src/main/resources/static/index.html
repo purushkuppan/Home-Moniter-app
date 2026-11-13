@@ -243,6 +243,12 @@
   .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
   /* Home: the status card says in one line whether the house is OK */
+  /* Can't reach home (issue 112): a banner, and everything below dimmed so old values don't look current */
+  .offline-banner { display: grid; gap: 2px; margin-bottom: 16px; padding: 12px 14px; border-radius: 14px;
+    background: var(--warn-soft); color: var(--warn); }
+  .offline-banner[hidden] { display: none; }
+  .offline-banner span { font-size: 13px; }
+  body.offline .tab-panel { opacity: .55; filter: grayscale(.6); }
   .status-card {
     display: flex; flex-direction: column; gap: 14px; margin-bottom: 20px; padding: 18px;
     background: var(--surface); border: 1px solid var(--border); border-radius: 20px; box-shadow: var(--shadow);
@@ -565,6 +571,11 @@
 </header>
 
 <main class="wrap">
+  <!-- Can't reach home for a while (#112): old values stay, dimmed, with when they were last known -->
+  <div class="offline-banner" id="offlineBanner" role="alert" hidden>
+    <strong id="offlineText"></strong>
+    <span id="offlineHint"></span>
+  </div>
   <!-- Home: is the house OK? (one status card), then quick controls, appliances and today's events -->
   <div class="tab-panel" data-tab="status">
   <section class="status-card" id="statusCard" aria-live="polite" aria-label="Home status"></section>
@@ -846,6 +857,21 @@ function badge(type, value) {
 }
 
 function formatValue(type, value) {
+  // Words, not raw values (#112): never "unavailable", "unknown", "true" or "false" on screen.
+  const raw = (value ?? '').toString().trim().toLowerCase();
+  if (raw === 'unavailable') return 'Not reporting';
+  if (raw === 'unknown') return '—';
+  if (raw === 'true') return 'Yes';
+  if (raw === 'false') return 'No';
+  if (type !== 'temperature' && type !== 'power') {
+    // Any other number keeps its unit: whole % (humidity, battery), one decimal for kWh and the rest.
+    const m = /^(-?\d+(?:\.\d+)?) ?(%|[A-Za-z]+)?$/.exec(value.trim());
+    if (m) {
+      const n = Number(m[1]), unit = m[2] || '';
+      if (unit === '%') return Math.round(n) + '%';
+      return (unit.toLowerCase() === 'kwh' ? n.toFixed(1) : oneDecimal(n)) + (unit ? String.fromCharCode(160) + unit : '');
+    }
+  }
   if (type === 'temperature' && /^-?\d/.test(value)) {
     const m = TEMP_READING.exec(value);   // "37.5 F"; a number without a unit is shown as it is
     return m ? showTemp(m[1], m[2]) : value;
@@ -921,6 +947,17 @@ function setUnit(unit) {
   renderAlerts(activeAlerts);
   if (lastWeather) renderWeather(lastWeather);
   renderControls();
+}
+
+/**
+ * When something happened, as people say it (#112): "12 min ago" within the hour, otherwise the time itself,
+ * "at 8:05 PM", "on Sun 8:05 PM" (or just "8:05 PM" with words = false). "3 hours ago" makes old look recent.
+ */
+function whenText(date, words = true) {
+  if (Math.abs(Date.now() - date) < 3600000) return timeAgo(date);
+  const text = sinceText(date);
+  if (!words) return text;
+  return (date.toDateString() === new Date().toDateString() ? 'at ' : 'on ') + text;
 }
 
 function timeAgo(date) {
@@ -1007,7 +1044,7 @@ function applianceSummary(d) {
   if (offline) return ['Offline', 'bad', 'Since ' + sinceText(new Date(offline.time))];
   const leak = readings.find(r => r.type === 'leak');
   if (leak && lower(leak.value) === 'wet') return ['Wet', 'bad', 'Water detected · since ' + sinceText(leak.time)];
-  if (leak && lower(leak.value) === 'dry') return ['Dry', 'ok', 'No water · updated ' + timeAgo(d.updated)];
+  if (leak && lower(leak.value) === 'dry') return ['Dry', 'ok', 'No water · updated ' + whenText(d.updated)];
   const plug = readings.find(r => r.type === 'switch');
   if (plug) {
     const watts = readings.find(r => r.type === 'power');
@@ -1034,9 +1071,9 @@ function applianceSummary(d) {
     // nothing useful; when the machine last finished a load does.
     return ['Idle', 'idle', d.lastRun ? 'Last run finished ' + sinceText(d.lastRun) : 'No finished run yet'];
   }
-  if (doors.length) return ['Closed', 'ok', temps.join(' · ') || 'Updated ' + timeAgo(d.updated)];
+  if (doors.length) return ['Closed', 'ok', temps.join(' · ') || 'Updated ' + whenText(d.updated)];
   const first = readings[0];
-  return [first ? formatValue(first.type, (first.value ?? '').toString()) : '–', 'idle', 'Updated ' + timeAgo(d.updated)];
+  return [first ? formatValue(first.type, (first.value ?? '').toString()) : '–', 'idle', 'Updated ' + whenText(d.updated)];
 }
 
 function chevron() {
@@ -1114,7 +1151,7 @@ function renderStatus() {
     title = 'Waiting for the first reading';
   }
   const newest = events.length ? new Date(events[0].time) : null;
-  const sub = newest ? 'Last activity ' + timeAgo(newest) : 'Nothing has reported yet';
+  const sub = newest ? 'Last activity ' + whenText(newest) : 'Nothing has reported yet';
 
   const main = el('div', 'status-main');
   const ic = el('span', 'status-icon');
@@ -1281,7 +1318,7 @@ function renderTable(newIds = new Set()) {
       const value = el('td', 'col-value'); value.append(badge(e.type, e.value));
 
       tr.append(when, device, el('td', 'type col-type', prettyType(e.type)), value,
-                el('td', 'ago col-ago', timeAgo(date)), el('td', 'id col-id', e.id));
+                el('td', 'ago col-ago', whenText(date, false)), el('td', 'id col-id', e.id));
       return tr;
     }));
   }
@@ -1413,8 +1450,10 @@ async function load() {
     renderAll(newIds);
     loadControls();
     if (!paused && stream && stream.readyState === EventSource.OPEN) setStatus('Live', '', clockFormat.format(new Date()));
+    connectionBack();
   } catch (err) {
     setStatus('Offline · retrying', 'error');
+    connectionLost();
   }
 }
 
@@ -1891,6 +1930,40 @@ function toast(message, isError = false) {
   toastTimer = setTimeout(() => { t.hidden = true; }, isError ? 6000 : 3500);
 }
 
+// ---------------------------------------------------------------- can't reach home (#112)
+
+const OFFLINE_AFTER_MS = 30000;   // a short blip isn't worth a banner
+let lostSince = null;             // when Kudil stopped answering
+let knownAt = null;               // when what is on screen was last current
+
+function connectionLost() {
+  if (lostSince === null) lostSince = Date.now();
+  renderOffline();
+}
+
+function connectionBack() {
+  lostSince = null;
+  knownAt = Date.now();
+  renderOffline();
+}
+
+/** On the home network (a LAN address), or away (through Tailscale: http://kudil:8080). */
+const atHome = () => /^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.|127\.|localhost$)/.test(location.hostname);
+
+/** After 30 s without home: a banner saying since when, the reason when known, and every value dimmed. */
+function renderOffline() {
+  const offline = lostSince !== null && Date.now() - lostSince >= OFFLINE_AFTER_MS;
+  $('offlineBanner').hidden = !offline;
+  document.body.classList.toggle('offline', offline);
+  if (!offline) return;
+  $('offlineText').textContent = 'Can\'t reach home since ' + sinceText(new Date(knownAt ?? lostSince))
+    + '. Showing what Kudil knew then.';
+  $('offlineHint').textContent = atHome()
+    ? 'Check that the hub is switched on and connected to the Wi-Fi.'
+    : 'Away from home? Check that Tailscale is on.';
+}
+setInterval(renderOffline, 5000);
+
 function connect() {
   stream = new EventSource('/api/events/stream');
   stream.onopen = () => { checkVersion(); load(); };   // (re)connected: catch up on anything missed while disconnected
@@ -1900,6 +1973,7 @@ function connect() {
   stream.onerror = () => {
     // The browser reconnects by itself; just show it.
     if (!paused) setStatus(stream.readyState === EventSource.CLOSED ? 'Offline · retrying' : 'Reconnecting…', 'error');
+    if (!paused) connectionLost();
     if (stream.readyState === EventSource.CLOSED) setTimeout(() => { if (!paused) connect(); }, 5000);
   };
 }
@@ -2030,6 +2104,7 @@ $('pause').addEventListener('click', () => {
   if (paused) {
     disconnect();
     setStatus('Paused', 'paused');
+    connectionBack();   // paused on purpose: not "can't reach home"
   } else {
     connect();
   }

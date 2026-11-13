@@ -252,6 +252,21 @@ class EventControllerTests {
     }
 
     @Test
+    void numbersOnScreenCanBeTrusted() throws Exception {
+        String page = get("/").replace("\r\n", "\n");
+        // Can't reach home for 30 s: a banner says since when and why, and every value is dimmed.
+        assertThat(page).contains("<div class=\"offline-banner\" id=\"offlineBanner\" role=\"alert\" hidden>",
+                "const OFFLINE_AFTER_MS = 30000;", "'. Showing what Kudil knew then.'",
+                "'Away from home? Check that Tailscale is on.'", "document.body.classList.toggle('offline', offline);",
+                "body.offline .tab-panel { opacity: .55;", "    if (!paused) connectionLost();", "    connectionBack();\n  } catch (err) {");
+        // Relative times only within the hour; words, not raw values; units on numbers.
+        assertThat(page).contains("if (Math.abs(Date.now() - date) < 3600000) return timeAgo(date);",
+                "'Updated ' + whenText(d.updated)", "'Last activity ' + whenText(newest)",
+                "if (raw === 'unavailable') return 'Not reporting';", "if (raw === 'unknown') return '—';",
+                "if (unit === '%') return Math.round(n) + '%';");
+    }
+
+    @Test
     void theWeatherCardShowsOfficialWarningsForTheHouse() throws Exception {
         String page = get("/").replace("\r\n", "\n");
         assertThat(page).contains("fetch('/api/warnings'", "const line = el('div', 'weather-warning ' + warn.level.toLowerCase());",
