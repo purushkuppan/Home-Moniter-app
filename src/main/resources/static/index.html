@@ -277,6 +277,7 @@
   .alert-item .since { margin-left: auto; font-size: 12px; font-weight: 400; white-space: nowrap; }
   .alert-item .alert-text { display: grid; gap: 2px; }
   .alert-item .ack { font-size: 12px; font-weight: 400; }
+  .alert-item .next-step { font-size: 13px; font-weight: 400; }
   .alert-item .btn { flex-shrink: 0; }
 
   /* Quick controls: one tile per appliance action, its state in plain words */
@@ -1239,6 +1240,7 @@ function renderStatus() {
       // A critical alert (a leak) rings on the phones until someone answers; it can be answered here too.
       const text = el('span', 'alert-text');
       text.append(el('span', '', keepTogether(convertTemps(a.message || ''))));
+      if (a.nextStep) text.append(el('span', 'next-step', a.nextStep));   // what to do next (#161)
       if (a.acknowledgedBy) {
         text.append(el('span', 'ack', 'On it: ' + a.acknowledgedBy + ' · ' + sinceText(new Date(a.acknowledgedAt))));
       }

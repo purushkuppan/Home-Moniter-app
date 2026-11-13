@@ -97,7 +97,7 @@ class WarningServiceTests {
         assertThat(source.asked).as("only the location rounded to about 1 km").containsExactly("33.21,-97.13");
         assertThat(reported()).extracting(Alert::key, Alert::level, Alert::device, Alert::message).containsExactly(tuple(
                 "severe:tornado-warning", Alert.Level.PROBLEM, "Tornado Warning",
-                "Tornado Warning for the house until 7:45 PM. Go to your safe room now."));
+                "Tornado Warning for the house until 7:45 PM."));
         assertThat(service.active()).extracting(Alert::key).containsExactly("severe:tornado-warning");
 
         // The service extends it: a new warning with a later end, still the same tornado warning.
@@ -127,7 +127,7 @@ class WarningServiceTests {
 
         assertThat(reported()).extracting(Alert::key, Alert::level, Alert::message).containsExactly(
                 tuple("severe:severe-thunderstorm-warning", Alert.Level.PROBLEM, "Severe Thunderstorm Warning for the house "
-                        + "until 8:15 PM. Stay inside, away from windows. Hail up to 1.75 in: move the cars into the garage."),
+                        + "until 8:15 PM. Hail up to 1.75 in: move the cars into the garage."),
                 tuple("weather:freeze-watch", Alert.Level.NOTICE, "Freeze Watch for the house until Sat 9:00 AM."),
                 tuple("weather:winter-storm-warning", Alert.Level.PROBLEM, "Winter Storm Warning for the house."));
         assertThat(service.active()).as("notices aren't problems going on").extracting(Alert::device)

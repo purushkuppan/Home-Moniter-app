@@ -104,6 +104,8 @@ class AlertServiceTests {
             active = alerts();
         }
         assertThat(active).contains("\"key\":\"leak:kitchen leak sensor\"", "\"critical\":true", "\"acknowledgedBy\":null");
+        assertThat(active).as("what to do next (#161)")
+                .contains("\"nextStep\":\"Turn off the water at the main valve, then dry the floor and find where it comes from.\"");
 
         HttpResponse<String> answer = post("/api/alerts/ack", "{\"key\":\"leak:kitchen leak sensor\"}", null);
         assertThat(answer.statusCode()).isEqualTo(200);
