@@ -41,6 +41,7 @@ Ubuntu Server 26.04) and may become a product later.
    because they run on the live hub with root privileges.
 9. User-facing text (dashboard, notifications, messages) says **Kudil**. Code identifiers stay HomeHub
    (packages, classes, properties, the `X-HomeHub-Pin` header, the `homehub` service and `homehub.db`).
+   Write that text by `docs/writing-guide.md`: plain words, one vocabulary, what happened, how long, what to do.
 
 ## Definition of done
 Tests pass in CI, the PR is reviewed and merged, the release is deployed to `home-hub`,
