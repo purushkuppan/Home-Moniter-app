@@ -73,6 +73,7 @@ final class AlertRules {
         String message;   // set once alerted
         Duration limit;   // doors: how long it may stay open
         boolean byDefault; // doors: the ready-made limit (#100), a notice by day
+        double warmLimit;  // temperatures: the limit it is above
 
         Watch(String device, Instant since) {
             this.device = device;
@@ -160,7 +161,8 @@ final class AlertRules {
     /** Tracks whether every reading of a watched device is "unavailable" (offline) or not. */
     private List<Alert> availability(Event e, String value, Instant time) {
         String main = mainKey(e.device());
-        if (!offlineLimits.containsKey(main) || "command".equals(e.type())) return List.of();
+        Duration offlineLimit = offlineLimit(mainName(e.device()));
+        if (offlineLimit == null || "command".equals(e.type())) return List.of();
         Map<String, Boolean> readings = unavailable.computeIfAbsent(main, k -> new HashMap<>());
         readings.put(key(e.device()) + "|" + e.type(), value.equals("unavailable"));
         if (!readings.containsValue(false)) {   // everything this device reports is unavailable
@@ -177,10 +179,10 @@ final class AlertRules {
         String device = key(e.device());
         switch (e.type()) {
             case "contact" -> {
-                // Its own limit (the fridge), else what the Devices list says, else the ready-made one (#100).
-                Duration limit = doorLimits.get(device);
-                boolean byDefault = limit == null;
-                if (byDefault) limit = deviceSettings.openFor(e.device()).orElse(defaults.openFor());
+                // What the Devices list says, else its own configured limit (the fridge), else the ready-made one (#100).
+                Duration own = doorLimits.get(device);
+                boolean byDefault = own == null;   // no limit of its own: a notice by day
+                Duration limit = deviceSettings.openFor(e.device()).orElse(own != null ? own : defaults.openFor());
                 if (limit.isZero()) {
                     openDoors.remove(device);   // no open-door alert for this one (switched off)
                     break;
@@ -233,12 +235,18 @@ final class AlertRules {
                 }
             }
             case "temperature" -> {
-                Double limit = warmLimits.get(device);
+                Double limit = deviceSettings.tooWarm(e.device()).orElse(warmLimits.get(device));
+                if (limit != null && limit.isNaN()) {   // switched off on the Devices list
+                    tooWarm.remove(device);
+                    break;
+                }
                 Matcher m = READING.matcher(value);
                 if (limit == null || !m.matches()) break;   // no rule, or "unavailable"
                 String reading = new BigDecimal(m.group(1)).stripTrailingZeros().toPlainString() + unit(m.group(2));
                 if (Double.parseDouble(m.group(1)) > limit) {
-                    tooWarm.computeIfAbsent(device, d -> new Watch(e.device(), time)).reading = reading;
+                    Watch w = tooWarm.computeIfAbsent(device, d -> new Watch(e.device(), time));
+                    w.reading = reading;
+                    w.warmLimit = limit;
                 } else {
                     Watch w = tooWarm.remove(device);
                     if (w != null && w.message != null) {
@@ -248,12 +256,12 @@ final class AlertRules {
                 }
             }
             case "machineState" -> {
-                if (!machines.contains(device)) break;
+                if (!reportsCycles(e.device())) break;
                 if (RUNNING.contains(value)) running.add(device);
                 else if (value.equals("stop") && running.remove(device)) return List.of(finished(e.device(), time));
             }
             case "jobState" -> {
-                if (machines.contains(device) && JOB_DONE.contains(value) && running.remove(device)) {
+                if (reportsCycles(e.device()) && JOB_DONE.contains(value) && running.remove(device)) {
                     return List.of(finished(e.device(), time));
                 }
             }
@@ -325,13 +333,14 @@ final class AlertRules {
         tooWarm.forEach((device, w) -> {
             if (w.message == null && !now.isBefore(w.since.plus(warmFor))) {
                 w.message = name(w.device) + " is too warm: " + w.reading + " (above "
-                        + BigDecimal.valueOf(warmLimits.get(device)).stripTrailingZeros().toPlainString()
+                        + BigDecimal.valueOf(w.warmLimit).stripTrailingZeros().toPlainString()
                         + unitOf(w.reading) + " for " + human(Duration.between(w.since, now)) + ")";
                 due.add(new Alert("warm:" + device, Level.PROBLEM, w.device, w.message, now));
             }
         });
         offline.forEach((device, w) -> {
-            if (w.message == null && !now.isBefore(w.since.plus(offlineLimits.get(device)))) {
+            Duration limit = offlineLimit(w.device);
+            if (w.message == null && limit != null && !now.isBefore(w.since.plus(limit))) {
                 w.message = w.device + " is offline. No data for " + human(Duration.between(w.since, now)) + ".";
                 due.add(new Alert("offline:" + device, Level.PROBLEM, w.device, w.message, now));
             }
@@ -385,6 +394,17 @@ final class AlertRules {
 
     private static String mainKey(String device) {
         return key(mainName(device));
+    }
+
+    /** How long this device ("Refrigerator") may be all unavailable before it is offline; null = not watched. */
+    private Duration offlineLimit(String mainName) {
+        Duration limit = deviceSettings.offlineAfter(mainName).orElse(offlineLimits.get(key(mainName)));
+        return limit == null || limit.isZero() ? null : limit;
+    }
+
+    /** Whether the end of this washer's or dryer's cycles is reported: the Devices list, else the configured list. */
+    private boolean reportsCycles(String device) {
+        return deviceSettings.finished(mainName(device)).orElse(machines.contains(key(device)));
     }
 
     /** "Refrigerator/Fridge" -> "Fridge door", "Back door" -> "Back door", "Bedroom window" -> "Bedroom window" */

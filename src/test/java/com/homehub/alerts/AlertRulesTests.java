@@ -445,6 +445,63 @@ class AlertRulesTests {
                 .containsExactly(tuple(Level.CLEARED, "Front door lock works again: locked."));
     }
 
+    /** What the Devices list says for the appliances (#100), over the configured defaults in SETTINGS. */
+    private static AlertRules withChoices(Map<String, Duration> openFor, Map<String, Double> tooWarm,
+                                          Map<String, Boolean> finished, Map<String, Duration> offline) {
+        return new AlertRules(SETTINGS, DefaultAlertProperties.defaults(), DENTON, new DeviceAlertSettings() {
+            @Override public java.util.Optional<Duration> openFor(String device) { return java.util.Optional.ofNullable(openFor.get(device)); }
+            @Override public java.util.Optional<Double> tooWarm(String device) { return java.util.Optional.ofNullable(tooWarm.get(device)); }
+            @Override public java.util.Optional<Boolean> finished(String device) { return java.util.Optional.ofNullable(finished.get(device)); }
+            @Override public java.util.Optional<Duration> offlineAfter(String device) { return java.util.Optional.ofNullable(offline.get(device)); }
+        });
+    }
+
+    @Test
+    void theDevicesListCanTuneTheFridgeDoors() {
+        AlertRules rules = withChoices(Map.of("Refrigerator/Fridge", Duration.ofMinutes(5), "Refrigerator/Freezer", Duration.ZERO),
+                Map.of(), Map.of(), Map.of());
+        rules.onEvent(at("Refrigerator/Fridge", "contact", "open", NOON));
+        rules.onEvent(at("Refrigerator/Freezer", "contact", "open", NOON));
+
+        assertThat(rules.check(NOON.plus(Duration.ofMinutes(2)))).as("not after the configured 1 minute any more").isEmpty();
+        assertThat(rules.check(NOON.plus(Duration.ofMinutes(5)))).extracting(Alert::level, Alert::message)
+                .containsExactly(tuple(Level.PROBLEM, "Fridge door has been open for 5 minutes"));   // still a warning by day
+        assertThat(rules.check(NOON.plus(Duration.ofHours(1)))).as("the freezer's is switched off").isEmpty();
+    }
+
+    @Test
+    void theDevicesListCanTuneOrSwitchOffTooWarm() {
+        AlertRules rules = withChoices(Map.of(), Map.of("Refrigerator/Fridge", 40.0, "Refrigerator/Freezer", Double.NaN),
+                Map.of(), Map.of());
+        rules.onEvent(at("Refrigerator/Fridge", "temperature", "42 F", NOON));        // under the configured 45
+        rules.onEvent(at("Refrigerator/Freezer", "temperature", "30 F", NOON));       // far above the configured 10
+        assertThat(rules.check(NOON.plus(Duration.ofMinutes(15)))).extracting(Alert::message)
+                .containsExactly("Fridge is too warm: 42 °F (above 40 °F for 15 minutes)");
+    }
+
+    @Test
+    void theDevicesListCanSwitchCycleNoticesAndOfflineAlerts() {
+        AlertRules rules = withChoices(Map.of(), Map.of(), Map.of("Washer", false, "Dishwasher", true),
+                Map.of("Refrigerator", Duration.ZERO));
+        rules.onEvent(at("Washer", "machineState", "run", NOON));
+        assertThat(rules.onEvent(at("Washer", "machineState", "stop", NOON.plus(Duration.ofMinutes(50))))).isEmpty();
+        rules.onEvent(at("Dishwasher", "machineState", "run", NOON));
+        assertThat(rules.onEvent(at("Dishwasher", "machineState", "stop", NOON.plus(Duration.ofMinutes(90)))))
+                .extracting(Alert::message).containsExactly("Dishwasher finished");
+
+        rules.onEvent(at("Refrigerator/Fridge", "temperature", "unavailable", NOON));
+        rules.onEvent(at("Refrigerator/Fridge", "contact", "unavailable", NOON));
+        assertThat(rules.check(NOON.plus(Duration.ofHours(2)))).as("offline alert switched off").isEmpty();
+    }
+
+    @Test
+    void anApplianceCanGetAnOfflineAlertOfItsOwn() {
+        AlertRules rules = withChoices(Map.of(), Map.of(), Map.of(), Map.of("Washer", Duration.ofMinutes(15)));
+        rules.onEvent(at("Washer", "machineState", "unavailable", NOON));
+        assertThat(rules.check(NOON.plus(Duration.ofMinutes(15)))).extracting(Alert::message)
+                .containsExactly("Washer is offline. No data for 15 minutes.");
+    }
+
     @Test
     void doorNamesReadNaturally() {
         assertThat(AlertRules.doorName("Refrigerator/Fridge")).isEqualTo("Fridge door");

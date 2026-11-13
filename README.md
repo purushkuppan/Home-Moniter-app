@@ -154,7 +154,8 @@ few seconds after anything changes there (#99). A device paired in Home Assistan
   sensor"; Kudil suggests room + kind). **Hide** a device to ignore it (the Z-Wave stick, a phone). Both need the PIN.
 - A confirmed device gets ready-made alerts for its kind on day one (#100): leak, smoke and CO critical, doors and
   windows left open, locks jammed, low batteries. The list says which; a door's "alert if open" time can be changed or
-  switched off there (PIN).
+  switched off there (PIN). Appliances too: each fridge and freezer door's limit, each too-warm temperature, the end of
+  washer and dryer cycles, and the offline alert. `homehub.alerts.*` stays as the defaults; a choice wins over them.
 - Kudil records what matters for the kind: water and battery for a leak sensor, on/off and watts for a plug; not
   signal strength, firmware or settings.
 - Devices Kudil already recorded through `homehub.connectors.homeassistant.include` are confirmed automatically under

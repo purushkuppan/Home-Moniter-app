@@ -224,11 +224,12 @@
   .device-list { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 8px; }
   .device-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--border);
     border-radius: 14px; background: var(--surface); }
-  .device-row .device-text { display: grid; gap: 2px; min-width: 0; flex: 1; }
+  .device-row .device-text { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; min-width: 0; flex: 1; }
   .device-row .device-name { font-weight: 600; }
   .device-row .device-sub { color: var(--muted); font-size: 13px; }
   .device-row .device-actions { display: flex; gap: 6px; flex-shrink: 0; }
-  .device-row select { margin-top: 6px; justify-self: start; max-width: 100%; }
+  .device-row select { margin-top: 2px; width: 100%; min-width: 0; text-overflow: ellipsis; }
+  .device-row .setting-label { margin-top: 8px; }
   .status-chip.action { cursor: pointer; border: 0; font: inherit; }
   .brief-text { white-space: pre-line; line-height: 1.6; padding: 12px 14px; border: 1px solid var(--border);
     border-radius: 14px; background: var(--surface); }
@@ -1569,6 +1570,15 @@ function deviceRow(d) {
     select.onchange = () => chooseDevice(d, 'open-for', undefined, select.value === '' ? null : Number(select.value));
     text.append(select);
   }
+  // Appliances: each door, each temperature, its cycles, going offline; the first choice is the default (#100).
+  for (const s of d.settings || []) {
+    const select = el('select');
+    select.setAttribute('aria-label', d.name + ': ' + s.label);
+    for (const c of s.choices) { const o = el('option', '', c.label); o.value = c.value; select.append(o); }
+    select.value = s.value;
+    select.onchange = () => chooseDevice(d, 'setting', undefined, undefined, s.key, select.value);
+    text.append(el('span', 'device-sub setting-label', s.label.charAt(0).toUpperCase() + s.label.slice(1)), select);
+  }
   const actions = el('div', 'device-actions');
   const button = (label, onClick) => { const b = el('button', 'btn small', label); b.type = 'button'; b.onclick = onClick; return b; };
   if (d.status === 'new') {
@@ -1588,13 +1598,13 @@ function deviceRow(d) {
 }
 
 /** Confirm, hide or show a device. Needs the PIN: it decides what Kudil watches. */
-async function chooseDevice(d, action, name, minutes) {
+async function chooseDevice(d, action, name, minutes, key, value) {
   if (!await ensureUnlocked()) { loadDevices(); return; }   // put a changed choice back
   try {
     const res = await fetch('/api/devices/' + d.id, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', [PIN_HEADER]: controlPin },
-      body: JSON.stringify({ action, name, minutes })
+      body: JSON.stringify({ action, name, minutes, key, value })
     });
     const body = await res.json().catch(() => ({}));
     if (res.status === 401 || res.status === 429 || res.status === 403) lockControls();
