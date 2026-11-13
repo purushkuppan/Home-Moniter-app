@@ -44,6 +44,10 @@ class NextStepsTests {
             severe:flash-flood-warning    | PROBLEM | Flash Flood Warning  | Never drive through flooded roads.
             weather:winter-storm-warning  | PROBLEM | Winter Storm Warning | Follow what local officials say
             test:critical                 | PROBLEM | Kudil                | I'm on it
+            power:home                    | PROBLEM | Home power           | breaker panel
+            internet:home                 | PROBLEM | Internet             | Restart the modem
+            hubbattery:hub                | PROBLEM | Hub battery          | charger
+            batteryhealth:hub             | NOTICE  | Hub battery          | swelling
             """)
     void everyAlertKindSaysWhatToDoNext(String key, Level level, String device, String step) {
         assertThat(NextSteps.of(alert(key, level, device, "Something happened"))).hasValueSatisfying(s -> {

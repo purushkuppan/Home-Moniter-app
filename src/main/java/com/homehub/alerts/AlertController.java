@@ -2,6 +2,7 @@ package com.homehub.alerts;
 
 import com.homehub.ApiDocs;
 import com.homehub.controls.ControlPin;
+import com.homehub.hub.HubWatch;
 import com.homehub.weather.WarningService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -51,13 +52,15 @@ public class AlertController {
     private final ObjectProvider<AlertService> alerts;
     private final ObjectProvider<SmartThingsWatchdog> watchdog;
     private final ObjectProvider<WarningService> warnings;
+    private final ObjectProvider<HubWatch> hub;
     private final ControlPin pin;
 
     public AlertController(ObjectProvider<AlertService> alerts, ObjectProvider<SmartThingsWatchdog> watchdog,
-                           ObjectProvider<WarningService> warnings, ControlPin pin) {
+                           ObjectProvider<WarningService> warnings, ObjectProvider<HubWatch> hub, ControlPin pin) {
         this.alerts = alerts;
         this.watchdog = watchdog;
         this.warnings = warnings;
+        this.hub = hub;
         this.pin = pin;
     }
 
@@ -70,6 +73,7 @@ public class AlertController {
         if (service != null) all.addAll(service.active());
         watchdog.ifAvailable(w -> all.addAll(w.active()));
         warnings.ifAvailable(w -> all.addAll(w.active()));   // official weather warnings in force (#106)
+        hub.ifAvailable(h -> all.addAll(h.active()));        // power cut, internet down (#103)
 
         List<ActiveAlert> active = new ArrayList<>();
         for (Alert a : all) {
