@@ -250,6 +250,32 @@ Check it: `systemctl status ntfy`, and `curl -s http://127.0.0.1:2586/v1/health`
 token: empty `/etc/homehub/credentials/homehub.ntfy.token` and run the script again (the old one stays valid until
 removed with `sudo runuser -u ntfy -- ntfy token remove kudil <token>`).
 
+## Dead-man switch (when the hub itself goes silent)
+Every alert comes from the hub, so if the hub dies (power, a crash, a full disk) nothing would tell you. An outside
+check does (#102): Kudil pings it every 5 minutes while it is **really healthy**: the database answers, the alert
+timers run, and Home Assistant (which still delivers phone alerts) is connected. If something is wrong, Kudil tells the
+check at once ("fail", with the reason); if the hub is dead, the pings just stop. Either way the outside check alerts
+you from outside the house.
+
+One-time setup with **Healthchecks.io** (free Hobby plan; the software is open source, BSD-3, and can be self-hosted
+later on the optional cloud VM):
+1. Sign up at healthchecks.io, add a check named "Kudil hub" with **Period 5 minutes** and **Grace 10 minutes**.
+2. Under *Integrations*, add how to reach you: email, and for a phone push, e.g. the public **ntfy.sh** server with a
+   long secret topic subscribed in the ntfy app (your hub's own ntfy can't help when the hub is down).
+3. Copy the check's **ping URL** (`https://hc-ping.com/…`). It is a secret: anyone with it can mark the hub healthy.
+   On the hub:
+   ```bash
+   sudo sh -c 'umask 077; cat > /etc/homehub/credentials/homehub.deadman.ping-url'
+   # paste the URL, press Enter, then Ctrl+D
+   sudo systemctl restart homehub
+   ```
+   (After `setup-hub.sh` has installed the `homehub.service` that loads it; the file exists empty until then.)
+4. Check it: the Healthchecks page shows a ping within 5 minutes. Then `sudo systemctl stop homehub`: within 15
+   minutes you get the outside alert. `sudo systemctl start homehub` and it turns green again.
+
+Kudil also warns on its own when the disk that holds the database is **85 %** full, or free memory falls below **10 %**
+(or swap is more than 90 % used), and says when it is fine again.
+
 ## Firewall
 `setup-firewall.sh` (also run by `setup-hub.sh`) opens Kudil (8080), Cockpit (9090) and Home Assistant (8123) to the
 home network `192.168.4.0/22` only, and removes older rules that opened them to anyone. SSH is left as it is.
