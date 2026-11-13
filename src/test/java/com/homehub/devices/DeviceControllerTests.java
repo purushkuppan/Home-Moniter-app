@@ -51,7 +51,8 @@ class DeviceControllerTests {
         String body = send("GET", "/api/devices", null, null).body();
 
         assertThat(body.indexOf("\"status\":\"new\"")).isLessThan(body.indexOf("\"status\":\"confirmed\""));
-        assertThat(body).contains("\"name\":\"Water Leak XS Sensor\"", "\"kindLabel\":\"Leak sensor\"", "\"room\":\"Kitchen\"",
+        // Named as its readings are shown (homehub.connectors.homeassistant.names), not "Water Leak XS Sensor".
+        assertThat(body).contains("\"name\":\"Kitchen leak sensor\"", "\"kindLabel\":\"Leak sensor\"", "\"room\":\"Kitchen\"",
                 "\"maker\":\"Zooz ZSE42\"", "\"measures\":[\"Water\",\"Battery\"]",
                 "\"measures\":[\"Open or closed\",\"Temperature\"]",   // the fridge
                 "\"measures\":[\"On or off\",\"Power use\"]",          // the plug
@@ -91,6 +92,28 @@ class DeviceControllerTests {
 
         HttpResponse<String> shown = send("POST", "/api/devices/" + stick, "4821", "{\"action\":\"show\"}");
         assertThat(shown.body()).contains("back on the list to review", "\"status\":\"new\"");
+    }
+
+    @Test
+    void eachDeviceSaysWhatItAlertsAboutAndADoorsAlertCanBeChanged() throws Exception {
+        catalog.sync(DeviceCatalogTests.hubWithBackDoor().build());
+        String list = send("GET", "/api/devices", null, null).body();
+        assertThat(list).contains("\"alerts\":[\"Critical alert when wet\",\"Low battery warning\"]",
+                "\"alerts\":[\"Alert when open longer than 10 min (default), a warning at night\",\"Low battery warning\"]",
+                "\"openForChoices\":[0,1,2,5,10,15,30,60]", "\"defaultOpenFor\":10");
+
+        long door = idOf("Backdoor openclose");
+        assertThat(send("POST", "/api/devices/" + door, null, "{\"action\":\"open-for\",\"minutes\":2}").statusCode())
+                .as("needs the PIN").isEqualTo(401);
+        HttpResponse<String> shorter = send("POST", "/api/devices/" + door, "4821", "{\"action\":\"open-for\",\"minutes\":2}");
+        assertThat(shorter.statusCode()).isEqualTo(200);
+        assertThat(shorter.body()).contains("Back door: Alert when open longer than 2 min.", "\"openFor\":2");
+        assertThat(send("POST", "/api/devices/" + door, "4821", "{\"action\":\"open-for\",\"minutes\":0}").body())
+                .contains("Back door: No alert when left open.");
+        assertThat(send("POST", "/api/devices/" + door, "4821", "{\"action\":\"open-for\",\"minutes\":null}").body())
+                .contains("(default)", "\"openFor\":null");
+        assertThat(send("POST", "/api/devices/" + door, "4821", "{\"action\":\"open-for\",\"minutes\":7}").statusCode())
+                .isEqualTo(400);
     }
 
     @Test

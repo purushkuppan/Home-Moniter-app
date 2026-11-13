@@ -345,6 +345,123 @@ class AlertRulesTests {
         assertThat(rules.check(T0.plus(Duration.ofHours(1)))).isEmpty();
     }
 
+    // ---------------------------------------------------------------- ready-made alerts by kind (#100)
+
+    private static final java.time.ZoneId DENTON = java.time.ZoneId.of("America/Chicago");
+    private static final Instant NOON = Instant.parse("2026-11-12T18:00:00Z");      // 12:00 in Denton
+    private static final Instant NIGHT = Instant.parse("2026-11-13T05:00:00Z");     // 23:00 in Denton
+
+    /** Rules with the ready-made alerts on (10 minutes, night 22:00-06:00) and the Devices list's settings. */
+    private static AlertRules withDefaults(Map<String, Duration> perDevice) {
+        return new AlertRules(SETTINGS, DefaultAlertProperties.defaults(), DENTON,
+                device -> java.util.Optional.ofNullable(perDevice.get(device)));
+    }
+
+    private static Event at(String device, String type, String value, Instant time) {
+        return new Event(null, device, type, value, time);
+    }
+
+    @Test
+    void anyDoorLeftOpenIsANoticeByDayAndClosingIsReported() {
+        AlertRules rules = withDefaults(Map.of());
+        rules.onEvent(at("Back door", "contact", "open", NOON));
+
+        assertThat(rules.check(NOON.plus(Duration.ofMinutes(9)))).isEmpty();
+        assertThat(rules.check(NOON.plus(Duration.ofMinutes(10)))).extracting(Alert::key, Alert::level, Alert::message)
+                .containsExactly(tuple("door:back door", Level.NOTICE, "Back door has been open for 10 minutes"));
+        assertThat(rules.check(NOON.plus(Duration.ofMinutes(20)))).as("once").isEmpty();
+        assertThat(rules.onEvent(at("Back door", "contact", "closed", NOON.plus(Duration.ofMinutes(12)))))
+                .extracting(Alert::level, Alert::message)
+                .containsExactly(tuple(Level.CLEARED, "Back door closed. It was open for 12 minutes."));
+    }
+
+    @Test
+    void atNightADoorLeftOpenIsAWarning() {
+        AlertRules rules = withDefaults(Map.of());
+        rules.onEvent(at("Garage/Side window", "contact", "open", NIGHT));
+        assertThat(rules.check(NIGHT.plus(Duration.ofMinutes(10)))).extracting(Alert::level, Alert::message)
+                .containsExactly(tuple(Level.PROBLEM, "Side window has been open for 10 minutes"));
+    }
+
+    @Test
+    void theDevicesListCanShortenOrSwitchOffTheOpenDoorAlert() {
+        AlertRules rules = withDefaults(Map.of("Back door", Duration.ofMinutes(2), "Patio door", Duration.ZERO));
+        rules.onEvent(at("Back door", "contact", "open", NOON));
+        rules.onEvent(at("Patio door", "contact", "open", NOON));
+
+        assertThat(rules.check(NOON.plus(Duration.ofHours(3)))).extracting(Alert::message)
+                .containsExactly("Back door has been open for 3 hours");
+        assertThat(rules.active()).extracting(Alert::device).containsExactly("Back door");
+    }
+
+    @Test
+    void theFridgeKeepsItsOwnLimitAndIsAWarningEvenByDay() {
+        AlertRules rules = withDefaults(Map.of("Refrigerator", Duration.ZERO));   // the list's setting doesn't apply
+        rules.onEvent(at("Refrigerator/Fridge", "contact", "open", NOON));
+        assertThat(rules.check(NOON.plus(Duration.ofMinutes(1)))).extracting(Alert::level, Alert::message)
+                .containsExactly(tuple(Level.PROBLEM, "Fridge door has been open for 1 minute"));
+    }
+
+    @Test
+    void withoutReadyMadeAlertsOnlyConfiguredDoorsAlert() {
+        rules.onEvent(event("Back door", "contact", "open", sec(0)));
+        assertThat(rules.check(T0.plus(Duration.ofHours(1)))).isEmpty();
+    }
+
+    @Test
+    void afterARestartADoorAlreadyReportedByDayIsNotReportedAgain() {
+        AlertRules rules = withDefaults(Map.of());
+        rules.seed(List.of(new Event(1L, "Back door", "contact", "open", NOON),
+                new Event(2L, "Back door", "notice", "Back door has been open for 10 minutes", NOON.plus(Duration.ofMinutes(10)))));
+        assertThat(rules.check(NOON.plus(Duration.ofMinutes(30)))).isEmpty();
+        assertThat(rules.active()).extracting(Alert::message).containsExactly("Back door has been open for 10 minutes");
+    }
+
+    @Test
+    void smokeAndCarbonMonoxideAlertAtOnceAndClear() {
+        AlertRules rules = withDefaults(Map.of());
+        assertThat(rules.onEvent(at("Hall smoke alarm", "smoke", "clear", NOON))).isEmpty();
+        assertThat(rules.onEvent(at("Hall smoke alarm", "smoke", "detected", NOON))).extracting(Alert::key, Alert::level, Alert::message)
+                .containsExactly(tuple("smoke:hall smoke alarm", Level.PROBLEM, "Smoke detected: Hall smoke alarm. Get everyone out."));
+        assertThat(rules.onEvent(at("Hall smoke alarm", "smoke", "detected", NOON.plus(Duration.ofMinutes(1))))).as("once").isEmpty();
+        assertThat(rules.onEvent(at("Hall CO alarm", "co", "detected", NOON))).extracting(Alert::key, Alert::message)
+                .containsExactly(tuple("co:hall co alarm", "Carbon monoxide detected: Hall CO alarm. Get everyone out."));
+        assertThat(rules.active()).hasSize(2);
+
+        assertThat(rules.onEvent(at("Hall smoke alarm", "smoke", "clear", NOON.plus(Duration.ofMinutes(4)))))
+                .extracting(Alert::level, Alert::message)
+                .containsExactly(tuple(Level.CLEARED, "Hall smoke alarm is clear again. Smoke was detected for 4 min."));
+        assertThat(rules.active()).extracting(Alert::device).containsExactly("Hall CO alarm");
+    }
+
+    @Test
+    void aJammedLockIsAWarningUntilItWorksAgain() {
+        AlertRules rules = withDefaults(Map.of());
+        assertThat(rules.onEvent(at("Front door lock", "lock", "locked", NOON))).isEmpty();
+        assertThat(rules.onEvent(at("Front door lock", "lock", "jammed", NOON))).extracting(Alert::level, Alert::message)
+                .containsExactly(tuple(Level.PROBLEM, "Front door lock is jammed. Check that it is fully locked."));
+        assertThat(rules.onEvent(at("Front door lock", "lock", "locked", NOON.plus(Duration.ofMinutes(2)))))
+                .extracting(Alert::level, Alert::message)
+                .containsExactly(tuple(Level.CLEARED, "Front door lock works again: locked."));
+    }
+
+    @Test
+    void doorNamesReadNaturally() {
+        assertThat(AlertRules.doorName("Refrigerator/Fridge")).isEqualTo("Fridge door");
+        assertThat(AlertRules.doorName("Back door")).isEqualTo("Back door");
+        assertThat(AlertRules.doorName("Bedroom window")).isEqualTo("Bedroom window");
+        assertThat(AlertRules.doorName("Garage")).isEqualTo("Garage");
+    }
+
+    @Test
+    void theNightSpansMidnight() {
+        DefaultAlertProperties d = DefaultAlertProperties.defaults();
+        assertThat(d.isNight(java.time.LocalTime.of(23, 0))).isTrue();
+        assertThat(d.isNight(java.time.LocalTime.of(5, 59))).isTrue();
+        assertThat(d.isNight(java.time.LocalTime.of(6, 0))).isFalse();
+        assertThat(d.isNight(java.time.LocalTime.of(21, 59))).isFalse();
+    }
+
     @Test
     void durationsReadNaturally() {
         assertThat(AlertRules.human(sec(40))).isEqualTo("less than a minute");

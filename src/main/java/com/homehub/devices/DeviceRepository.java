@@ -14,7 +14,7 @@ import org.springframework.stereotype.Repository;
 public class DeviceRepository {
 
     private static final String COLUMNS = "id, ha_device_id, name, ha_name, room, manufacturer, model, kind, status, "
-            + "entities, readings, in_home_assistant, first_seen, confirmed_at";
+            + "entities, readings, in_home_assistant, first_seen, confirmed_at, open_for_minutes";
 
     private static final RowMapper<Device> ROW_MAPPER = (rs, i) -> new Device(
             rs.getLong("id"), rs.getString("ha_device_id"), rs.getString("name"), rs.getString("ha_name"),
@@ -23,7 +23,8 @@ public class DeviceRepository {
             split(rs.getString("entities")), split(rs.getString("readings")).stream().map(Device.Reading::parse).toList(),
             rs.getInt("in_home_assistant") == 1,
             Instant.parse(rs.getString("first_seen")),
-            rs.getString("confirmed_at") == null ? null : Instant.parse(rs.getString("confirmed_at")));
+            rs.getString("confirmed_at") == null ? null : Instant.parse(rs.getString("confirmed_at")),
+            rs.getObject("open_for_minutes") == null ? null : rs.getInt("open_for_minutes"));
 
     private final JdbcTemplate jdbc;
 
@@ -53,6 +54,11 @@ public class DeviceRepository {
                         + "readings = ?, in_home_assistant = ? WHERE ha_device_id = ?",
                 d.haName(), d.room(), d.manufacturer(), d.model(), d.kind().name(), join(d.entities()), readings(d),
                 d.inHomeAssistant() ? 1 : 0, d.haDeviceId());
+    }
+
+    /** Doors and windows: alert when open longer than this many minutes; 0 = never; null = the default (#100). */
+    public void updateOpenFor(long id, Integer minutes) {
+        jdbc.update("UPDATE devices SET open_for_minutes = ? WHERE id = ?", minutes, id);
     }
 
     /** The household's choice: confirm (with a name), hide, or back to new. */

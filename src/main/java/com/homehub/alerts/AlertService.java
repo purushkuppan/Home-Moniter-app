@@ -57,14 +57,17 @@ public class AlertService {
 
     @Autowired
     public AlertService(AlertProperties properties, BackupProperties backup, CriticalAlertProperties criticalSettings,
+                        DefaultAlertProperties defaults, DeviceAlertSettings deviceSettings,
                         EventRepository repository, AlertNotifier notifier, WeatherService weather) {
         // The hub's own time zone: weather checks run at local times such as 07:00.
-        this(properties, backup, criticalSettings, repository, notifier, weather, Clock.systemDefaultZone());
+        this(properties, backup, criticalSettings, defaults, deviceSettings, repository, notifier, weather,
+                Clock.systemDefaultZone());
     }
 
     AlertService(AlertProperties properties, BackupProperties backup, CriticalAlertProperties criticalSettings,
+                 DefaultAlertProperties defaults, DeviceAlertSettings deviceSettings,
                  EventRepository repository, AlertNotifier notifier, WeatherService weather, Clock clock) {
-        this.rules = new AlertRules(properties);
+        this.rules = new AlertRules(properties, defaults, clock.getZone(), deviceSettings);
         this.weatherAlerts = new WeatherAlerts(properties, clock.getZone());
         this.backupAlerts = new BackupAlerts(backup, clock.instant(), clock.getZone());
         this.critical = new CriticalAlerts(criticalSettings);

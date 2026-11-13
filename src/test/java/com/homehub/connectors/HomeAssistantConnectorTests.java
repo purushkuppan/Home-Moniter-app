@@ -316,6 +316,22 @@ class HomeAssistantConnectorTests {
     }
 
     @Test
+    void smokeAndCarbonMonoxideAlarmsReadDetectedOrClear() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        expectStates(server, """
+                [{"entity_id":"binary_sensor.hall_smoke","state":"on","attributes":{"device_class":"smoke","friendly_name":"Hall smoke"}},
+                 {"entity_id":"binary_sensor.hall_co","state":"off","attributes":{"device_class":"carbon_monoxide","friendly_name":"Hall CO"}}]
+                """);
+        server.expect(requestTo(URL + "/api/template")).andRespond(withStatus(HttpStatus.BAD_REQUEST));
+
+        List<Event> events = new HomeAssistantConnector(builder, PROPS, "binary_sensor.hall_*", null).poll();
+
+        assertThat(events).extracting(Event::type, Event::value).containsExactlyInAnyOrder(
+                tuple("smoke", "detected"), tuple("co", "clear"));
+    }
+
+    @Test
     void batteryLevelsAreReadByDefault() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();

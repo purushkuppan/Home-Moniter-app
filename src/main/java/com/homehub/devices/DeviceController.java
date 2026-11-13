@@ -1,5 +1,6 @@
 package com.homehub.devices;
 
+import com.homehub.alerts.DefaultAlertProperties;
 import com.homehub.controls.ControlPin;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -32,21 +33,32 @@ import org.springframework.web.bind.annotation.RestController;
 public class DeviceController {
 
     /** One device, as the dashboard shows it. */
+    /**
+     * One device, as the dashboard shows it.
+     *
+     * @param alerts     its ready-made alerts in words (#100), e.g. "Critical alert when wet"
+     * @param openFor    doors and windows: its "alert if open longer than" in minutes (0 = never), null = the default
+     * @param openForChoices doors and windows: the minutes that can be chosen; empty for other devices
+     */
     public record DeviceView(long id, String name, String suggestedName, String room, String kind, String kindLabel,
-                             String maker, String status, List<String> measures, boolean inHomeAssistant) {
+                             String maker, String status, List<String> measures, boolean inHomeAssistant,
+                             List<String> alerts, Integer openFor, int defaultOpenFor, List<Integer> openForChoices) {
     }
 
-    public record Choice(String action, String name) {
+    /** "confirm" (with name), "hide", "show", or "open-for" (with minutes; null = back to the default). */
+    public record Choice(String action, String name, Integer minutes) {
     }
 
     private static final String PIN_HEADER = "X-HomeHub-Pin";
 
     private final DeviceCatalog catalog;
     private final ControlPin pin;
+    private final DefaultAlertProperties defaults;
 
-    public DeviceController(DeviceCatalog catalog, ControlPin pin) {
+    public DeviceController(DeviceCatalog catalog, ControlPin pin, DefaultAlertProperties defaults) {
         this.catalog = catalog;
         this.pin = pin;
+        this.defaults = defaults;
     }
 
     @GetMapping
@@ -76,13 +88,15 @@ public class DeviceController {
                 case "confirm" -> catalog.confirm(id, choice.name());
                 case "hide" -> catalog.hide(id);
                 case "show" -> catalog.unhide(id);
-                default -> throw new IllegalArgumentException("Choose confirm, hide or show.");
+                case "open-for" -> catalog.setOpenFor(id, choice.minutes());
+                default -> throw new IllegalArgumentException("Choose confirm, hide, show or open-for.");
             };
-            String done = switch (d.status()) {
-                case CONFIRMED -> d.name() + " is watched now.";
-                case HIDDEN -> d.name() + " is hidden.";
-                case NEW -> d.name() + " is back on the list to review.";
-            };
+            String done = action.equals("open-for") ? d.name() + ": " + openForWords(d) + "."
+                    : switch (d.status()) {
+                        case CONFIRMED -> d.name() + " is watched now.";
+                        case HIDDEN -> d.name() + " is hidden.";
+                        case NEW -> d.name() + " is back on the list to review.";
+                    };
             return ResponseEntity.ok(Map.of("message", done, "device", view(d)));
         } catch (NoSuchElementException ex) {
             return message(HttpStatus.NOT_FOUND, "No such device.");
@@ -91,7 +105,29 @@ public class DeviceController {
         }
     }
 
-    static DeviceView view(Device d) {
+    /** "Alert when open longer than 10 min (default)", "No alert when left open". */
+    private String openForWords(Device d) {
+        if (d.openForMinutes() != null && d.openForMinutes() == 0) return "No alert when left open";
+        long minutes = d.openForMinutes() != null ? d.openForMinutes() : defaults.openFor().toMinutes();
+        return "Alert when open longer than " + minutes + " min" + (d.openForMinutes() == null ? " (default)" : "");
+    }
+
+    /** The ready-made alerts of a device (#100), in words. */
+    private List<String> alertsOf(Device d) {
+        List<String> alerts = new ArrayList<>();
+        switch (d.kind()) {
+            case LEAK -> alerts.add("Critical alert when wet");
+            case SMOKE -> alerts.add("Critical alert on smoke");
+            case CO -> alerts.add("Critical alert on carbon monoxide");
+            case OPENING, GARAGE -> alerts.add(openForWords(d) + ", a warning at night");
+            case LOCK -> alerts.add("Warning when jammed");
+            default -> { }
+        }
+        if (d.readings().stream().anyMatch(r -> r.kindKey().equals("sensor/battery"))) alerts.add("Low battery warning");
+        return alerts;
+    }
+
+    DeviceView view(Device d) {
         Set<String> measures = new LinkedHashSet<>();
         for (Device.Reading r : d.readings()) {
             String what = MEASURES.get(r.kindKey());
@@ -101,7 +137,9 @@ public class DeviceController {
         String maker = String.join(" ", java.util.stream.Stream.of(d.manufacturer(), d.model())
                 .filter(s -> s != null && !s.isBlank()).toList());
         return new DeviceView(d.id(), d.name(), suggestedName(d), d.room(), d.kind().name().toLowerCase(Locale.ROOT),
-                d.kind().label, maker, d.status().name().toLowerCase(Locale.ROOT), List.copyOf(measures), d.inHomeAssistant());
+                d.kind().label, maker, d.status().name().toLowerCase(Locale.ROOT), List.copyOf(measures), d.inHomeAssistant(),
+                alertsOf(d), d.openForMinutes(), (int) defaults.openFor().toMinutes(),
+                d.kind() == DeviceKind.OPENING || d.kind() == DeviceKind.GARAGE ? DeviceCatalog.OPEN_FOR_CHOICES : List.of());
     }
 
     /** "Kitchen leak sensor", from the room and the kind; the Home Assistant name when there is no room. */
