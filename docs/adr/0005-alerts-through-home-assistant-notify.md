@@ -1,6 +1,8 @@
 # 5. Alerts on the dashboard and on phones through Home Assistant notify
 
-Date: 2026-11-06 · Status: accepted
+Date: 2026-11-06 · Status: accepted, superseded in part by [ADR 12](0012-direct-device-connections.md)
+
+> Alerts go out through a `Notifier` interface; Home Assistant notify is kept only for iPhones; see [ADR 12](0012-direct-device-connections.md). The rules part (Kudil decides when to alert) still applies.
 
 ## Context
 HomeHub records what happens, but someone has to open the dashboard to notice a fridge door left open, a fridge

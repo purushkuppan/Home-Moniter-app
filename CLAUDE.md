@@ -11,6 +11,9 @@ Ubuntu Server 26.04) and may become a product later.
 - SQLite via JDBC (`spring-boot-starter-jdbc`, `sqlite-jdbc`), single connection pool
 - Static dashboard in `src/main/resources/static`
 - Connectors implement `DeviceConnector` and are scheduled by `ConnectorScheduler`
+- Devices are reached only through `DeviceConnector` implementations that talk to devices or protocol servers
+  directly (ADR 12). Home Assistant may be called only by the iPhone notifier; existing Home Assistant code moves
+  over issue by issue.
 
 ## Commands
 - Release: every merge to `main` is released and deployed automatically (ADR 9). GitHub Actions picks the next

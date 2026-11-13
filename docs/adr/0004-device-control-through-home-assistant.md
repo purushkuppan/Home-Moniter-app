@@ -1,6 +1,8 @@
 # 4. Device control through Home Assistant, protected by a household PIN
 
-Date: 2026-11-05 · Status: accepted
+Date: 2026-11-05 · Status: accepted, superseded in part by [ADR 12](0012-direct-device-connections.md)
+
+> Device control moves to direct connections behind `DeviceConnector`; see [ADR 12](0012-direct-device-connections.md). The PIN rules here still apply.
 
 ## Context
 Until now HomeHub only watched devices. The household wants to change them from the dashboard too
