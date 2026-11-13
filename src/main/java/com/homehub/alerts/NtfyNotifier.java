@@ -124,7 +124,10 @@ public class NtfyNotifier implements Notifier {
             ack.put("url", link + "/api/alerts/ack");
             ack.put("method", "POST");
             ack.put("headers", Map.of("Content-Type", "application/json"));
-            ack.put("body", JsonMapper.shared().writeValueAsString(Map.of("key", alert.key(), "who", ACK_FROM)));
+            Map<String, String> answer = new LinkedHashMap<>();   // a fixed order, so the body is always the same
+            answer.put("key", alert.key());
+            answer.put("who", ACK_FROM);
+            ack.put("body", JsonMapper.shared().writeValueAsString(answer));
             ack.put("clear", true);
             actions.add(ack);
         }
