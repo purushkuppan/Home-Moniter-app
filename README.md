@@ -24,6 +24,29 @@ Run the tests:
 .\mvnw.cmd test
 ```
 
+## API docs
+
+Every `/api/**` endpoint is described in an OpenAPI spec, with Swagger UI to read and try it from the browser
+([ADR 11](docs/adr/0011-api-docs-with-springdoc.md)):
+
+- **Swagger UI:** http://localhost:8080/swagger-ui.html (on the hub: `http://kudil:8080/swagger-ui.html`)
+- **OpenAPI spec (JSON):** http://localhost:8080/v3/api-docs
+
+Endpoints that change something in the home (device controls, the test alarm, the Devices list choices) need the
+household PIN in the `X-HomeHub-Pin` header: press **Authorize** in Swagger UI and type it there. The live feed
+`GET /api/events/stream` is a Server-Sent Events stream, which Swagger UI can't show; open it in the browser or with
+`curl -N` instead.
+
+The docs are on by default, because Kudil is reachable only from home and through Tailscale (ADR 10). To turn them
+off, set both properties (for example in `application-prod.properties`):
+
+```properties
+springdoc.api-docs.enabled=false
+springdoc.swagger-ui.enabled=false
+```
+
+Both pages then answer 404. Revisit when per-person logins arrive (#16).
+
 ## Dependency licenses
 
 Every build checks the licenses of the libraries that ship in the jar
