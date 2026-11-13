@@ -45,7 +45,8 @@ public class AlertService {
     private final BackupAlerts backupAlerts;
     private final WeatherService weather;
     private final EventRepository repository;
-    private final AlertNotifier notifier;
+    private final AlertNotifier notifier;   // iPhones, through Home Assistant
+    private final NtfyNotifier ntfy;        // Android phones (#154); null in some tests
     private final CriticalAlerts critical;
     private final List<String> escalateTo;
     private final Clock clock;
@@ -58,15 +59,16 @@ public class AlertService {
     @Autowired
     public AlertService(AlertProperties properties, BackupProperties backup, CriticalAlertProperties criticalSettings,
                         DefaultAlertProperties defaults, DeviceAlertSettings deviceSettings,
-                        EventRepository repository, AlertNotifier notifier, WeatherService weather) {
+                        EventRepository repository, AlertNotifier notifier, NtfyNotifier ntfy, WeatherService weather) {
         // The hub's own time zone: weather checks run at local times such as 07:00.
-        this(properties, backup, criticalSettings, defaults, deviceSettings, repository, notifier, weather,
+        this(properties, backup, criticalSettings, defaults, deviceSettings, repository, notifier, ntfy, weather,
                 Clock.systemDefaultZone());
     }
 
     AlertService(AlertProperties properties, BackupProperties backup, CriticalAlertProperties criticalSettings,
                  DefaultAlertProperties defaults, DeviceAlertSettings deviceSettings,
-                 EventRepository repository, AlertNotifier notifier, WeatherService weather, Clock clock) {
+                 EventRepository repository, AlertNotifier notifier, NtfyNotifier ntfy, WeatherService weather,
+                 Clock clock) {
         this.rules = new AlertRules(properties, defaults, clock.getZone(), deviceSettings);
         this.weatherAlerts = new WeatherAlerts(properties, clock.getZone());
         this.backupAlerts = new BackupAlerts(backup, clock.instant(), clock.getZone());
@@ -75,6 +77,7 @@ public class AlertService {
         this.weather = weather;
         this.repository = repository;
         this.notifier = notifier;
+        this.ntfy = ntfy;
         this.clock = clock;
         List<Event> latest = repository.latestPerReading();
         rules.seed(latest);           // a door left open before a restart is still watched
@@ -179,14 +182,32 @@ public class AlertService {
             if (!alert.reachesPhone()) continue;   // dashboard only
             if (critical.isCritical(alert)) {
                 critical.sent(alert, clock.instant());
-                notifier.send(alert, true);
+                deliver(alert, true);
             } else if (Alert.CONNECTION_KEY.equals(alert.key())) {
                 // Home Assistant just came back: give its phone notifications a moment to load before sending.
-                worker.schedule(() -> notifier.send(alert), PHONE_DELAY_AFTER_RECONNECT_SECONDS, TimeUnit.SECONDS);
+                worker.schedule(() -> deliver(alert, false), PHONE_DELAY_AFTER_RECONNECT_SECONDS, TimeUnit.SECONDS);
             } else {
-                notifier.send(alert);
+                deliver(alert, false);
             }
         }
+    }
+
+    /**
+     * Sends one alert to every phone (ADR 12): iPhones through Home Assistant, Android phones through ntfy. When Home
+     * Assistant should have reached the iPhones but couldn't, they get it as an ordinary ntfy push instead (their
+     * fallback topic), and it stays on the dashboard either way. Returns how many phones or topics accepted it.
+     */
+    private int deliver(Alert alert, boolean isCritical) {
+        int iphones = isCritical ? notifier.send(alert, true) : sendOrdinary(alert);
+        if (ntfy == null || !ntfy.configured()) return iphones;
+        int sent = iphones + ntfy.send(alert, isCritical);
+        if (notifier.configured() && iphones == 0) sent += ntfy.sendFallback(alert);
+        return sent;
+    }
+
+    /** {@link AlertNotifier#send(Alert)}, which also reports how many phones accepted it. */
+    private int sendOrdinary(Alert alert) {
+        return notifier.send(alert, false);
     }
 
     /** An unanswered critical alert: send it again, also to the escalation phones, or stop after the last repeat. */
@@ -194,7 +215,7 @@ public class AlertService {
         Alert alert = step.alert();
         String note = switch (step.kind()) {
             case REPEAT -> {
-                notifier.send(new Alert(alert.key(), alert.level(), alert.device(),
+                deliver(new Alert(alert.key(), alert.level(), alert.device(),
                         "Still no answer: " + alert.message(), now), true);
                 yield "No answer yet, sent again (" + ordinal(step.count() + 1) + " time): " + alert.message();
             }
@@ -263,7 +284,7 @@ public class AlertService {
                 "Test: this is how a critical alert rings. Tap \"I'm on it\".", now);
         critical.ended(test.key());   // a new test replaces an unanswered earlier one
         critical.sent(test, now);
-        int phones = notifier.send(test, true);
+        int phones = deliver(test, true);
         String note = "Test critical alert sent to " + phones + (phones == 1 ? " phone" : " phones");
         log.info("Alert: {}", note);
         repository.save(new Event(null, "Kudil", Alert.Level.NOTICE.eventType, note, now));

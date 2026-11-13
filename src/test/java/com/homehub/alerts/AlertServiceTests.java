@@ -107,13 +107,15 @@ class AlertServiceTests {
         assertThat(active).as("what to do next (#161)")
                 .contains("\"nextStep\":\"Turn off the water at the main valve, then dry the floor and find where it comes from.\"");
 
-        HttpResponse<String> answer = post("/api/alerts/ack", "{\"key\":\"leak:kitchen leak sensor\"}", null);
+        // The ntfy "I'm on it" button (#154) says who answered.
+        HttpResponse<String> answer = post("/api/alerts/ack",
+                "{\"key\":\"leak:kitchen leak sensor\",\"who\":\"Android phone\"}", null);
         assertThat(answer.statusCode()).isEqualTo(200);
-        assertThat(alerts()).contains("\"acknowledgedBy\":\"dashboard\"");
+        assertThat(alerts()).contains("\"acknowledgedBy\":\"Android phone\"");
         assertThat(post("/api/alerts/ack", "{\"key\":\"leak:kitchen leak sensor\"}", null).statusCode())
                 .as("already answered").isEqualTo(409);
         assertThat(repository.latest(10)).extracting(Event::type, Event::value)
-                .contains(tuple("alertAck", "On it (dashboard): Water leak in the kitchen"));
+                .contains(tuple("alertAck", "On it (Android phone): Water leak in the kitchen"));
 
         repository.add("Kitchen leak sensor", "leak", "dry");   // over: nothing left on the dashboard
         for (int i = 0; i < 50 && alerts().contains("Water leak"); i++) Thread.sleep(100);

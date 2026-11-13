@@ -45,6 +45,7 @@ class AlertServiceCriticalTests {
     private final TestClock clock = new TestClock();
     private final EventRepository repository = mock(EventRepository.class);
     private final AlertNotifier notifier = mock(AlertNotifier.class);
+    private final NtfyNotifier ntfy = mock(NtfyNotifier.class);   // not configured unless a test says so
     private final List<Event> saved = new ArrayList<>();
     private AlertService service;
 
@@ -64,7 +65,7 @@ class AlertServiceCriticalTests {
         CriticalAlertProperties critical = new CriticalAlertProperties(List.of("leak"), Duration.ofMinutes(5), 24,
                 Duration.ofMinutes(10), List.of("notify.mobile_app_neighbour"), List.of());
         service = new AlertService(alerts, new BackupProperties("", null), critical, DefaultAlertProperties.defaults(),
-                DeviceAlertSettings.NONE, repository, notifier, weather, clock);
+                DeviceAlertSettings.NONE, repository, notifier, ntfy, weather, clock);
         return service;
     }
 
@@ -132,7 +133,7 @@ class AlertServiceCriticalTests {
 
         leak("dry", T0.plus(Duration.ofMinutes(20)));
         verify(notifier, timeout(2000)).send(org.mockito.ArgumentMatchers.argThat(a -> a != null
-                && a.level() == Alert.Level.CLEARED));
+                && a.level() == Alert.Level.CLEARED), eq(false));
         assertThat(service.acknowledgement("leak:kitchen leak sensor")).as("over").isEmpty();
     }
 
@@ -185,5 +186,30 @@ class AlertServiceCriticalTests {
     void phoneNamesReadNaturally() {
         assertThat(AlertService.phoneName("mobile_app_purushphone")).isEqualTo("Purushphone");
         assertThat(AlertService.phoneName("mobile_app_amma_s_phone")).isEqualTo("Amma s phone");
+    }
+
+    @Test
+    void androidPhonesGetEveryAlertThroughNtfyToo() {
+        when(ntfy.configured()).thenReturn(true);
+        when(ntfy.send(any(), eq(true))).thenReturn(1);
+        when(notifier.configured()).thenReturn(true);
+        start(List.of());
+        leak("wet", T0);
+
+        verify(ntfy, timeout(2000)).send(org.mockito.ArgumentMatchers.argThat(a -> a != null
+                && a.key().equals("leak:kitchen leak sensor")), eq(true));
+        verify(ntfy, never()).sendFallback(any());   // Home Assistant reached the iPhones
+    }
+
+    @Test
+    void whenHomeAssistantCantReachTheIPhonesTheyGetAnOrdinaryNtfyPush() {
+        when(ntfy.configured()).thenReturn(true);
+        when(notifier.configured()).thenReturn(true);
+        start(List.of());
+        when(notifier.send(any(), eq(true))).thenReturn(0);   // Home Assistant is down
+        leak("wet", T0);
+
+        verify(ntfy, timeout(2000)).sendFallback(org.mockito.ArgumentMatchers.argThat(a -> a != null
+                && a.message().equals("Water leak in the kitchen")));
     }
 }

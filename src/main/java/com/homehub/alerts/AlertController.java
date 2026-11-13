@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -44,8 +45,12 @@ public class AlertController {
                               boolean critical, String acknowledgedBy, Instant acknowledgedAt) {
     }
 
-    public record AckRequest(String key) {
+    /** {@code who}: optional, e.g. "Android phone" from the ntfy button (#154); "dashboard" when absent. */
+    public record AckRequest(String key, String who) {
     }
+
+    /** Letters, digits, spaces, - and _, at most 30: it ends up in the activity list. */
+    private static final Pattern WHO = Pattern.compile("[\\p{L}\\p{N} _-]{1,30}");
 
     private static final String PIN_HEADER = "X-HomeHub-Pin";
 
@@ -88,7 +93,7 @@ public class AlertController {
 
     @PostMapping("/ack")
     @Operation(summary = "\"I'm on it\" for a critical alert",
-            description = "Body `{\"key\": \"...\"}`. No PIN: it only stops the repeats; the alert stays until the "
+            description = "Body `{\"key\": \"...\", \"who\": \"Android phone\"}` (`who` optional). No PIN: it only stops the repeats; the alert stays until the "
                     + "problem is over. 409 when the alert is over or someone already answered.")
     public ResponseEntity<Map<String, Object>> acknowledge(@RequestBody(required = false) AckRequest request) {
         AlertService service = alerts.getIfAvailable();
@@ -96,7 +101,8 @@ public class AlertController {
         if (request == null || request.key() == null || request.key().isBlank()) {
             return message(HttpStatus.BAD_REQUEST, "Which alert? (key)");
         }
-        if (!service.acknowledge(request.key().trim(), "dashboard", null)) {
+        String who = request.who() != null && WHO.matcher(request.who().trim()).matches() ? request.who().trim() : "dashboard";
+        if (!service.acknowledge(request.key().trim(), who, null)) {
             return message(HttpStatus.CONFLICT, "This alert is over or someone already answered it.");
         }
         return message(HttpStatus.OK, "Thanks. The other phones stop ringing.");

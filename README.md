@@ -126,9 +126,14 @@ HomeHub warns when something needs attention. Details and trade-offs: [ADR 5](do
 | Rain expected | Checked at 07:00: today's forecast has at least 0.1 in. "Rain expected today: 0.31 in" (or Snow) | – |
 | Backup missing | Hub only: the last good nightly backup is more than 26 hours old. "Nightly backup missing. Last good backup: Sun Nov 8, 4:01 PM." | "Backups are working again. Last backup: Tue Nov 10, 3:01 AM." |
 | Water leak (**critical**) | A leak sensor reads wet. "Water leak in the kitchen". Rings as an alarm and repeats every 5 minutes until someone taps **I'm on it** (see below) | "Kitchen leak sensor is dry again." |
-| Smoke or CO (**critical**) | A smoke or CO alarm goes off. "Smoke detected: Hall smoke alarm. Get everyone out." Rings like a leak | "Hall smoke alarm is clear again. Smoke was detected for 4 min." |
-| Lock jammed | A lock reports jammed. "Front door lock is jammed. Check that it is fully locked." | "Front door lock works again: locked." |
-| Low battery | A battery at or below 20%, as a quiet notice: "Leak sensor battery is low: 15%. Replace it soon." While it stays low, a reminder at most once a week with its newest reading ("… is still low: 11% …") | "Leak sensor battery is fine again: 100%." |
+| Smoke or CO (**critical**) | A smoke or CO alarm goes off. "Smoke detected: Hall smoke alarm." Rings like a leak | "Hall smoke alarm is clear again. Smoke was detected for 4 min." |
+| Lock jammed | A lock reports jammed. "Front door lock is jammed." | "Front door lock works again: locked." |
+| Power cut | Hub only (#103): the hub laptop's charger stops. "Power is out at home since 2:05 AM. The hub is running on its battery: 97%." Hub battery warnings at 30 % and 10 % | "Power is back at home. It was out 1 hour 12 minutes, from 2:05 AM." After 2 hours, also a reminder to check the freezer |
+| Internet down | Hub only (#103): no answer from the internet for 3 minutes. **Dashboard only** while it lasts; power alerts raised meanwhile are sent when it is back | "Internet is back at home. It was down 40 minutes, from 2:05 AM." |
+| Low battery | A battery at or below 20%, as a quiet notice: "Leak sensor battery is low: 15%." While it stays low, a reminder at most once a week with its newest reading ("… is still low: 11% …") | "Leak sensor battery is fine again: 100%." |
+
+Every alert also says **what to do next** (#161), on its own line on phones and under the alert on the dashboard:
+"Turn off the water at the main valve, then dry the floor and find where it comes from."
 
 - **Dashboard:** a red banner shows problems still going on. Every alert is listed in the activity list
   (Alert, All clear, Notice).
@@ -136,6 +141,35 @@ HomeHub warns when something needs attention. Details and trade-offs: [ADR 5](do
   then add its notify action (Home Assistant: Settings › Tools › Actions, search `mobile_app`) to
   `homehub.alerts.send-to`. Tapping a notification opens the dashboard (on the home network). The "all clear"
   replaces the earlier notification.
+
+### Android phones through ntfy
+Kudil decides every alert itself and hands it to a notifier ([ADR 12](docs/adr/0012-direct-device-connections.md)):
+**Android phones get alerts from a self-hosted [ntfy](https://ntfy.sh) server** (Apache-2.0/GPL-2.0 dual-licensed,
+runs as its own process, nothing linked into Kudil), **iPhones keep the Home Assistant app**, which is the only free
+way to get iOS critical alerts that ring through silent mode.
+
+| Setting | What |
+|---|---|
+| `homehub.ntfy.url` | the ntfy server, e.g. `http://127.0.0.1:2586` on the hub. Empty: ntfy is off |
+| `homehub.ntfy.topic` | the topic every Android phone subscribes to. Pick a long, unguessable name |
+| `homehub.ntfy.fallback-topic` | optional: iPhones subscribe to it in the ntfy app and get an alert there (an ordinary push) when Home Assistant couldn't deliver it |
+| `homehub.ntfy.token` | only if the server requires a login. A **secret**: `~/.homehub/secrets.properties` or the systemd credential `homehub.ntfy.token` |
+| `homehub.alerts.send-to` | now only the **iPhones'** `notify.mobile_app_*` actions |
+
+Severity sets ntfy's priority: critical alerts are **5 (urgent)**, problems 4, all clears 3, notices 2. Critical alerts
+carry an **I'm on it** button that answers Kudil directly (the phone must reach Kudil: home Wi-Fi or Tailscale);
+the activity list then says "On it (Android phone): …".
+
+One-time setup on each **Android** phone:
+1. Install **ntfy** (F-Droid or Google Play), tap **+**, enter the topic, and under *Use another server* the hub's
+   address (e.g. `http://kudil:2586`).
+2. In the topic's settings, set **Instant delivery** on, and allow **urgent** notifications to **override Do Not
+   Disturb** (Android settings › Apps › ntfy › Notifications, and Do Not Disturb › Apps › ntfy).
+3. Remove the phone from `homehub.alerts.send-to` so it doesn't get every alert twice.
+4. Check it with **Settings → Alerts → Send test** (needs the PIN).
+
+On each **iPhone**: keep the Home Assistant app with **Critical Alerts** on (below). Optional: install ntfy too and
+subscribe to the fallback topic.
 
 ### Critical alerts
 A water leak (`homehub.alerts.critical.kinds`) must wake someone at 3 AM:
