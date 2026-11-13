@@ -99,8 +99,8 @@ class DeviceControllerTests {
     void eachDeviceSaysWhatItAlertsAboutAndADoorsAlertCanBeChanged() throws Exception {
         catalog.sync(DeviceCatalogTests.hubWithBackDoor().build());
         String list = send("GET", "/api/devices", null, null).body();
-        assertThat(list).contains("\"alerts\":[\"Critical alert when wet\",\"Low battery warning\"]",
-                "\"alerts\":[\"Alert when open longer than 10 min (default), a warning at night\",\"Low battery warning\"]",
+        assertThat(list).contains("\"alerts\":[\"Critical alert when wet\",\"Low battery notice, weekly\"]",
+                "\"alerts\":[\"Alert when open longer than 10 min (default), a warning at night\",\"Low battery notice, weekly\"]",
                 "\"openForChoices\":[0,1,2,5,10,15,30,60]", "\"defaultOpenFor\":10");
 
         long door = idOf("Backdoor openclose");

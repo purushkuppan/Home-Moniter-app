@@ -52,6 +52,8 @@ final class AlertRules {
     private static final Pattern PERCENT = Pattern.compile("(\\d+(?:\\.\\d+)?)\\s*%?");
     /** A low battery is fine again only this many points above the limit. */
     static final double BATTERY_CLEAR_MARGIN = 5;
+    /** A battery that stays low is mentioned again this often, no more (#100). */
+    static final Duration BATTERY_REMINDER = Duration.ofDays(7);
 
     private final Map<String, Duration> doorLimits = new HashMap<>();
     private final Map<String, Double> warmLimits = new HashMap<>();
@@ -74,6 +76,7 @@ final class AlertRules {
         Duration limit;   // doors: how long it may stay open
         boolean byDefault; // doors: the ready-made limit (#100), a notice by day
         double warmLimit;  // temperatures: the limit it is above
+        Instant lastSent;  // low batteries: when the household was last told
 
         Watch(String device, Instant since) {
             this.device = device;
@@ -302,13 +305,23 @@ final class AlertRules {
         return List.of();
     }
 
+    /**
+     * A low battery is a quiet notice (#100): once when it gets low, then a reminder at most once a week while it stays
+     * low ({@link #check}), with its newest reading.
+     */
     private List<Alert> batteryLow(String device, String reading, Instant time) {
         String key = key(device);
-        if (lowBatteries.containsKey(key)) return List.of();   // reported once, however low it goes
+        Watch known = lowBatteries.get(key);
+        if (known != null) {   // still low: no news now, but the weekly reminder gives the newest reading
+            if (!reading.isEmpty()) known.reading = reading;
+            return List.of();
+        }
         Watch w = new Watch(device, time);
+        w.reading = reading;
+        w.lastSent = time;
         w.message = name(device) + " battery is low" + (reading.isEmpty() ? "" : ": " + reading) + ". Replace it soon.";
         lowBatteries.put(key, w);
-        return List.of(new Alert("battery:" + key, Level.PROBLEM, device, w.message, time));
+        return List.of(new Alert("battery:" + key, Level.NOTICE, device, w.message, time));
     }
 
     private List<Alert> batteryFine(String key, String reading, Instant time) {
@@ -343,6 +356,13 @@ final class AlertRules {
             if (w.message == null && limit != null && !now.isBefore(w.since.plus(limit))) {
                 w.message = w.device + " is offline. No data for " + human(Duration.between(w.since, now)) + ".";
                 due.add(new Alert("offline:" + device, Level.PROBLEM, w.device, w.message, now));
+            }
+        });
+        lowBatteries.forEach((device, w) -> {
+            if (w.lastSent != null && !now.isBefore(w.lastSent.plus(BATTERY_REMINDER))) {
+                w.lastSent = now;
+                due.add(new Alert("battery:" + device, Level.NOTICE, w.device, name(w.device) + " battery is still low"
+                        + (w.reading.isEmpty() ? "" : ": " + w.reading) + ". Replace it soon.", now));
             }
         });
         Watch lost = connectionLost;

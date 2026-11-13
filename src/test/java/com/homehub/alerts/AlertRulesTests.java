@@ -268,10 +268,23 @@ class AlertRulesTests {
         assertThat(rules.onEvent(event("Leak sensor", "battery", "35 %", sec(0)))).isEmpty();
         assertThat(rules.onEvent(event("Leak sensor", "battery", "20 %", sec(60))))
                 .extracting(Alert::key, Alert::level, Alert::message)
-                .containsExactly(tuple("battery:leak sensor", Level.PROBLEM, "Leak sensor battery is low: 20%. Replace it soon."));
+                .containsExactly(tuple("battery:leak sensor", Level.NOTICE, "Leak sensor battery is low: 20%. Replace it soon."));
         assertThat(rules.onEvent(event("Leak sensor", "battery", "12 %", sec(120)))).as("not again").isEmpty();
         assertThat(rules.onEvent(event("Leak sensor", "battery", "unavailable", sec(130)))).isEmpty();
         assertThat(rules.active()).extracting(Alert::message).containsExactly("Leak sensor battery is low: 20%. Replace it soon.");
+    }
+
+    @Test
+    void aBatteryThatStaysLowIsMentionedAgainAtMostWeekly() {
+        rules.onEvent(event("Leak sensor", "battery", "18 %", sec(0)));
+        rules.onEvent(event("Leak sensor", "battery", "11 %", Duration.ofDays(3)));
+        assertThat(rules.check(T0.plus(Duration.ofDays(6)))).isEmpty();
+        assertThat(rules.check(T0.plus(Duration.ofDays(7)))).extracting(Alert::key, Alert::level, Alert::message)
+                .containsExactly(tuple("battery:leak sensor", Level.NOTICE, "Leak sensor battery is still low: 11%. Replace it soon."));
+        assertThat(rules.check(T0.plus(Duration.ofDays(10)))).as("not again for a week").isEmpty();
+        assertThat(rules.check(T0.plus(Duration.ofDays(14)))).hasSize(1);
+        rules.onEvent(event("Leak sensor", "battery", "100 %", Duration.ofDays(15)));
+        assertThat(rules.check(T0.plus(Duration.ofDays(30)))).as("replaced: no more reminders").isEmpty();
     }
 
     @Test

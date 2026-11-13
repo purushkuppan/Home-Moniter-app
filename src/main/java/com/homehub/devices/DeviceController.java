@@ -222,7 +222,7 @@ public class DeviceController {
             case LOCK -> alerts.add("Warning when jammed");
             default -> { }
         }
-        if (d.readings().stream().anyMatch(r -> r.kindKey().equals("sensor/battery"))) alerts.add("Low battery warning");
+        if (d.readings().stream().anyMatch(r -> r.kindKey().equals("sensor/battery"))) alerts.add("Low battery notice, weekly");
         return alerts;
     }
 
