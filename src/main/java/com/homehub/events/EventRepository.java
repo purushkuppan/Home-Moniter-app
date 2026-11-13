@@ -75,6 +75,17 @@ public class EventRepository {
                 ROW_MAPPER, from.toString(), to.toString());
     }
 
+    /** One event by its id. */
+    public Optional<Event> find(long id) {
+        return jdbc.query("SELECT id, device, type, value, time FROM events WHERE id = ?", ROW_MAPPER, id)
+                .stream().findFirst();
+    }
+
+    /** Removes one event, e.g. the self-check's test event (#124). Returns whether it existed. */
+    public boolean delete(long id) {
+        return jdbc.update("DELETE FROM events WHERE id = ?", id) == 1;
+    }
+
     public List<Event> latest(int limit) {
         return jdbc.query("SELECT id, device, type, value, time FROM events ORDER BY id DESC LIMIT ?",
                 ROW_MAPPER, limit);

@@ -30,6 +30,7 @@ public class EventStream {
     private static final long RECONNECT_MS = 3_000;
 
     private final List<SseEmitter> emitters = new CopyOnWriteArrayList<>();
+    private volatile long lastEventId = -1;   // the newest event handed to the stream, for the self-check (#124)
     private final ExecutorService sender = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "event-stream");
         t.setDaemon(true);
@@ -54,6 +55,7 @@ public class EventStream {
     /** Called by Spring whenever {@link EventRepository} saves an event. */
     @EventListener
     public void onEventSaved(Event event) {
+        if (event.id() != null) lastEventId = event.id();
         broadcast(() -> SseEmitter.event()
                 .id(String.valueOf(event.id()))
                 .name("event")
@@ -64,6 +66,11 @@ public class EventStream {
     @Scheduled(fixedRate = 25_000, initialDelay = 25_000)
     public void heartbeat() {
         broadcast(() -> SseEmitter.event().comment("ping"));
+    }
+
+    /** The id of the newest event that reached the stream, or -1. */
+    public long lastEventId() {
+        return lastEventId;
     }
 
     int subscriberCount() {

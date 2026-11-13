@@ -41,6 +41,9 @@ public class AlertService {
     static final long PHONE_DELAY_AFTER_RECONNECT_SECONDS = 30;
 
     private final AlertRules rules;
+    private final AlertProperties properties;              // kept for the self-check's dry run (#124)
+    private final DefaultAlertProperties defaults;
+    private final DeviceAlertSettings deviceSettings;
     private final WeatherAlerts weatherAlerts;
     private final BackupAlerts backupAlerts;
     private final WeatherService weather;
@@ -70,6 +73,9 @@ public class AlertService {
                  EventRepository repository, AlertNotifier notifier, NtfyNotifier ntfy, WeatherService weather,
                  Clock clock) {
         this.rules = new AlertRules(properties, defaults, clock.getZone(), deviceSettings);
+        this.properties = properties;
+        this.defaults = defaults;
+        this.deviceSettings = deviceSettings;
         this.weatherAlerts = new WeatherAlerts(properties, clock.getZone());
         this.backupAlerts = new BackupAlerts(backup, clock.instant(), clock.getZone());
         this.critical = new CriticalAlerts(criticalSettings);
@@ -138,6 +144,23 @@ public class AlertService {
      */
     public void report(List<Alert> alerts) {
         work(() -> raise(alerts));
+    }
+
+    /** What a dry run of the rules raised: the alerts, and whether the first one would ring as critical. */
+    public record DryRun(List<Alert> alerts, boolean critical) {
+    }
+
+    /**
+     * Runs a pretend leak through a fresh copy of the rules with the live settings (#124): nothing is stored, sent or
+     * remembered, and the real rules don't see it. After a deploy this proves that a leak still raises a critical
+     * alert.
+     */
+    public DryRun dryRunLeak(String device) {
+        AlertRules copy = new AlertRules(properties, defaults, clock.getZone(), deviceSettings);
+        Instant now = clock.instant();
+        List<Alert> raised = new ArrayList<>(copy.onEvent(new Event(null, device, "leak", "dry", now)));
+        raised.addAll(copy.onEvent(new Event(null, device, "leak", "wet", now)));
+        return new DryRun(raised, !raised.isEmpty() && critical.isCritical(raised.get(0)));
     }
 
     /** Problems that were reported and are still going on, for the dashboard banner. */

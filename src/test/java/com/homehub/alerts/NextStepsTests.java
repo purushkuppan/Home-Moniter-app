@@ -48,6 +48,7 @@ class NextStepsTests {
             internet:home                 | PROBLEM | Internet             | Restart the modem
             hubbattery:hub                | PROBLEM | Hub battery          | charger
             batteryhealth:hub             | NOTICE  | Hub battery          | swelling
+            deploy                        | PROBLEM | Kudil update         | failed release on GitHub
             """)
     void everyAlertKindSaysWhatToDoNext(String key, Level level, String device, String step) {
         assertThat(NextSteps.of(alert(key, level, device, "Something happened"))).hasValueSatisfying(s -> {
