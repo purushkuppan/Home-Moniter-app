@@ -41,6 +41,10 @@ public final class NextSteps {
                     : "Move the clothes to the dryer soon, so they don't smell.";
             case "weather", "severe" -> weather(key, alert.device());
             case "test" -> "Tap \"I'm on it\" to stop it ringing.";
+            case "power" -> "Check the breaker panel and whether the neighbours have power. Keep the fridge and freezer shut.";
+            case "internet" -> "Restart the modem and router. Phones get Kudil alerts again once it is back.";
+            case "hubbattery" -> "Plug in the hub laptop's charger if the power is back, or it will shut down.";
+            case "batteryhealth" -> "Check the hub laptop's battery for swelling, and plan to replace it.";
             default -> null;
         };
         return Optional.ofNullable(step);
