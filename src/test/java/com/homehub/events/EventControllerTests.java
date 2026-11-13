@@ -252,6 +252,16 @@ class EventControllerTests {
     }
 
     @Test
+    void theWeatherCardShowsOfficialWarningsForTheHouse() throws Exception {
+        String page = get("/").replace("\r\n", "\n");
+        assertThat(page).contains("fetch('/api/warnings'", "const line = el('div', 'weather-warning ' + warn.level.toLowerCase());",
+                "more.href = warn.link;", "more.rel = 'noopener';", "if (warnings.note) children.push(el('div', 'weather-meta', warnings.note));",
+                "'No official warnings for the house (' + warnings.source + ').'");
+        // Without Home Assistant there is no location: the API says so instead of failing.
+        assertThat(get("/api/warnings")).contains("\"warnings\":[]");
+    }
+
+    @Test
     void numbersOnScreenCanBeTrusted() throws Exception {
         String page = get("/").replace("\r\n", "\n");
         // Can't reach home for 30 s: a banner says since when and why, and every value is dimmed.
@@ -264,16 +274,6 @@ class EventControllerTests {
                 "'Updated ' + whenText(d.updated)", "'Last activity ' + whenText(newest)",
                 "if (raw === 'unavailable') return 'Not reporting';", "if (raw === 'unknown') return '—';",
                 "if (unit === '%') return Math.round(n) + '%';");
-    }
-
-    @Test
-    void theWeatherCardShowsOfficialWarningsForTheHouse() throws Exception {
-        String page = get("/").replace("\r\n", "\n");
-        assertThat(page).contains("fetch('/api/warnings'", "const line = el('div', 'weather-warning ' + warn.level.toLowerCase());",
-                "more.href = warn.link;", "more.rel = 'noopener';", "if (warnings.note) children.push(el('div', 'weather-meta', warnings.note));",
-                "'No official warnings for the house (' + warnings.source + ').'");
-        // Without Home Assistant there is no location: the API says so instead of failing.
-        assertThat(get("/api/warnings")).contains("\"warnings\":[]");
     }
 
     @Test
