@@ -30,7 +30,7 @@ class ApiDocsTests {
             "/api/alerts", "/api/alerts/ack", "/api/alerts/test",
             "/api/devices", "/api/devices/{id}",
             "/api/weather", "/api/sun", "/api/warnings",
-            "/api/brief", "/api/version");
+            "/api/brief", "/api/version", "/api/status");
 
     /** The endpoints that check the household PIN (header X-HomeHub-Pin), as "METHOD path". */
     static final Set<String> PIN_PROTECTED = Set.of(
