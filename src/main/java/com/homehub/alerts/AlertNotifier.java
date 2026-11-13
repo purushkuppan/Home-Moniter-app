@@ -28,7 +28,7 @@ import org.springframework.web.client.RestClientResponseException;
  */
 @Component
 @ConditionalOnProperty(name = "homehub.alerts.enabled", havingValue = "true")
-public class AlertNotifier {
+public class AlertNotifier implements Notifier {
 
     private static final Logger log = LoggerFactory.getLogger(AlertNotifier.class);
     private static final Pattern TARGET = Pattern.compile("notify\\.[a-z0-9_]+");
@@ -68,12 +68,19 @@ public class AlertNotifier {
         }
     }
 
+    /** Whether Home Assistant is set up and there are phones to send to. */
+    @Override
+    public boolean configured() {
+        return configured && !services.isEmpty();
+    }
+
     /** Sends one alert to every configured phone, as an ordinary (not critical) alert. Never throws. */
     public void send(Alert alert) {
         send(alert, false);
     }
 
     /** Sends one alert to every configured phone; returns how many accepted it. Never throws. */
+    @Override
     public int send(Alert alert, boolean critical) {
         return sendTo(alert, critical, services);
     }
