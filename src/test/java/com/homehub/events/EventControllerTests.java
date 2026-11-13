@@ -252,6 +252,16 @@ class EventControllerTests {
     }
 
     @Test
+    void theDailyBriefCanBePreviewedFromSettings() throws Exception {
+        String page = get("/").replace("\r\n", "\n");
+        String settings = page.substring(page.indexOf("<dialog id=\"settings\""), page.indexOf("</dialog>", page.indexOf("<dialog id=\"settings\"")));
+        assertThat(settings).contains(">Daily brief <span class=\"value\" id=\"briefAt\">", "id=\"briefBtn\"", ">Preview<");
+        assertThat(page).contains("<dialog id=\"briefDialog\"", "fetch('/api/brief'", "$('briefText').textContent = b.text;");
+        // The brief so far today, as the phones get it in the evening.
+        assertThat(get("/api/brief")).contains("\"text\":\"Today at home, ", "\"at\":\"20:00\"", "\"enabled\":true");
+    }
+
+    @Test
     void theWeatherCardShowsOfficialWarningsForTheHouse() throws Exception {
         String page = get("/").replace("\r\n", "\n");
         assertThat(page).contains("fetch('/api/warnings'", "const line = el('div', 'weather-warning ' + warn.level.toLowerCase());",

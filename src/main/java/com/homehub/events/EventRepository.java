@@ -69,6 +69,12 @@ public class EventRepository {
         return saved;
     }
 
+    /** Everything that happened from {@code from} (inclusive) to {@code to} (exclusive), oldest first. */
+    public List<Event> between(Instant from, Instant to) {
+        return jdbc.query("SELECT id, device, type, value, time FROM events WHERE time >= ? AND time < ? ORDER BY time, id",
+                ROW_MAPPER, from.toString(), to.toString());
+    }
+
     public List<Event> latest(int limit) {
         return jdbc.query("SELECT id, device, type, value, time FROM events ORDER BY id DESC LIMIT ?",
                 ROW_MAPPER, limit);

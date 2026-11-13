@@ -230,6 +230,8 @@
   .device-row .device-actions { display: flex; gap: 6px; flex-shrink: 0; }
   .device-row select { margin-top: 6px; justify-self: start; max-width: 100%; }
   .status-chip.action { cursor: pointer; border: 0; font: inherit; }
+  .brief-text { white-space: pre-line; line-height: 1.6; padding: 12px 14px; border: 1px solid var(--border);
+    border-radius: 14px; background: var(--surface); }
   .auto-options { margin: 12px 0 0; padding: 2px 14px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); }
   .auto-options[hidden] { display: none; }
   .auto-options label { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 6px 0; cursor: pointer; }
@@ -717,12 +719,26 @@
   <h4 class="group-title">Alerts</h4>
   <ul class="settings-list">
     <li>
+      <span>Daily brief <span class="value" id="briefAt"></span></span>
+      <button class="btn small" type="button" id="briefBtn">Preview</button>
+    </li>
+    <li>
       <span>Critical alert test</span>
       <button class="btn small" type="button" id="testCriticalBtn">Send test</button>
     </li>
   </ul>
   <p class="setting-hint">Rings every family phone the way a water leak would, even on silent. Needs the PIN.
     Each phone must allow it once (see the README: Critical alerts).</p>
+</dialog>
+<dialog id="briefDialog" class="sheet" aria-labelledby="briefTitle">
+  <div class="sheet-head">
+    <h3 id="briefTitle">Daily brief</h3>
+    <button class="icon-btn" type="button" id="briefClose" aria-label="Close the daily brief">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+    </button>
+  </div>
+  <div class="brief-text" id="briefText"></div>
+  <p class="setting-hint" id="briefHint"></p>
 </dialog>
 <dialog id="devicesDialog" class="sheet" aria-labelledby="devicesTitle">
   <div class="sheet-head">
@@ -1551,6 +1567,39 @@ async function chooseDevice(d, action, name, minutes) {
   }
 }
 
+// ---------------------------------------------------------------- daily brief (#21)
+
+/** Today's brief so far: what the phones get in the evening. */
+async function openBrief() {
+  $('briefText').textContent = 'Loading…';
+  $('briefDialog').showModal();
+  try {
+    const res = await fetch('/api/brief', { cache: 'no-store' });
+    const b = await res.json();
+    $('briefText').textContent = b.text;
+    $('briefHint').textContent = b.enabled
+      ? 'Sent to the phones every evening at ' + clockText(b.at) + ' as a quiet notice, and kept in Activity.'
+      : 'The daily brief is switched off (homehub.brief.enabled).';
+  } catch (err) {
+    $('briefText').textContent = 'Kudil is not reachable.';
+  }
+}
+
+/** "20:00" -> "8:00 PM", in this device's format. */
+function clockText(hhmm) {
+  const [h, m] = (hhmm || '20:00').split(':').map(Number);
+  const d = new Date();
+  d.setHours(h, m, 0, 0);
+  return shortClock.format(d);
+}
+
+async function loadBriefTime() {
+  try {
+    const b = await (await fetch('/api/brief', { cache: 'no-store' })).json();
+    $('briefAt').textContent = b.enabled ? '· ' + clockText(b.at) : '· off';
+  } catch (err) { /* offline */ }
+}
+
 function openDevices() {
   renderDevices();
   $('devicesDialog').showModal();
@@ -2012,12 +2061,16 @@ $('settingsBtn').addEventListener('click', () => {
   renderUnitSwitch();
   $('settings').showModal();
   if (followsSun()) loadSun();
+  loadBriefTime();
 });
 $('settingsClose').addEventListener('click', () => $('settings').close());
 $('testCriticalBtn').addEventListener('click', sendTestAlert);
 $('devicesBtn').addEventListener('click', () => { $('settings').close(); openDevices(); });
+$('briefBtn').addEventListener('click', () => { $('settings').close(); openBrief(); });
+$('briefClose').addEventListener('click', () => $('briefDialog').close());
 $('devicesClose').addEventListener('click', () => $('devicesDialog').close());
 if (location.hash === '#devices') openDevices();   // a bookmark straight to Devices
+if (location.hash === '#brief') openBrief();       // a bookmark straight to the daily brief
 if (location.hash === '#settings') $('settingsBtn').click();   // a bookmark straight to Settings
 $('settings').addEventListener('click', e => {   // a tap outside the sheet closes it
   const r = $('settings').getBoundingClientRect();
