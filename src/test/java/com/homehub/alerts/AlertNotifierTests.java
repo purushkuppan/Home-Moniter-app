@@ -34,7 +34,7 @@ class AlertNotifierTests {
     }
 
     @Test
-    void sendsToEveryPhoneWithALinkToTheDashboard() {
+    void sendsToEveryPhoneWithALinkToTheAlertOnTheDashboard() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         for (String phone : List.of("mobile_app_phone_one", "mobile_app_phone_two")) {
@@ -44,7 +44,8 @@ class AlertNotifierTests {
                     .andExpect(content().json("""
                             {"title":"Kudil","message":"Fridge door has been open for 1 minute\\nClose it and check that nothing blocks the door.",
                              "data":{"tag":"homehub-door:refrigerator/fridge","group":"homehub",
-                                     "url":"http://hub:8080","clickAction":"http://hub:8080"}}"""))
+                                     "url":"http://hub:8080/#alert=door%3Arefrigerator%2Ffridge&at=2026-11-06T18%3A01%3A00Z",
+                                     "clickAction":"http://hub:8080/#alert=door%3Arefrigerator%2Ffridge&at=2026-11-06T18%3A01%3A00Z"}}"""))
                     .andRespond(withSuccess());
         }
         AlertNotifier notifier = new AlertNotifier(builder, new HomeAssistantProperties(URL, "secret"),

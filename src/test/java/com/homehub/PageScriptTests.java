@@ -32,6 +32,17 @@ class PageScriptTests {
                 .as("declared more than once").isEmpty();
     }
 
+    /** A tapped notification opens Home on that alert (#184), also when Kudil is already open. */
+    @Test
+    void aNotificationLinkOpensThatAlert() throws Exception {
+        String page = new ClassPathResource("static/index.html").getContentAsString(StandardCharsets.UTF_8);
+        assertThat(page).contains("location.hash.startsWith('#alert=')", "fetch('/api/alerts/notified?' + query",
+                "\nshowNotified();", "window.addEventListener('hashchange', showNotified);",
+                "<section class=\"notified\" id=\"notified\"");
+        assertThat(page.indexOf("let notified = null;")).as("declared before anything draws the status card")
+                .isLessThan(page.indexOf("function renderStatus()"));
+    }
+
     @Test
     void theHeaderSaysLiveOnceTheStreamIsOpen() throws Exception {
         String page = new ClassPathResource("static/index.html").getContentAsString(StandardCharsets.UTF_8);

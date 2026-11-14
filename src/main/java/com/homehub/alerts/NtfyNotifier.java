@@ -24,7 +24,7 @@ import tools.jackson.databind.json.JsonMapper;
  * <ul>
  *   <li>Severity sets ntfy's priority: critical 5 (urgent: the ntfy app can override Do Not Disturb once allowed),
  *       a problem 4, an all clear 3, a notice 2.</li>
- *   <li>Tapping opens the dashboard ({@code homehub.alerts.link}). Critical alerts carry an "I'm on it" button that
+ *   <li>Tapping opens the dashboard ({@code homehub.alerts.link}) on that alert (#184). Critical alerts carry an "I'm on it" button that
  *       answers Kudil directly ({@code POST /api/alerts/ack}), so the phone must reach Kudil (home Wi-Fi or
  *       Tailscale).</li>
  *   <li>{@link #sendFallback}: an alert Home Assistant couldn't deliver to the iPhones also goes to
@@ -115,7 +115,7 @@ public class NtfyNotifier implements Notifier {
             case CLEARED -> "white_check_mark";
             case NOTICE -> "information_source";
         }));
-        if (!link.isEmpty()) m.put("click", link);
+        if (!link.isEmpty()) m.put("click", alert.link(link));   // the dashboard, showing this alert (#184)
         List<Map<String, Object>> actions = new ArrayList<>();
         if (critical && !link.isEmpty()) {
             Map<String, Object> ack = new LinkedHashMap<>();

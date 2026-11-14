@@ -3,6 +3,9 @@ package com.homehub.events;
 import java.sql.PreparedStatement;
 import java.sql.Statement;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -79,6 +82,17 @@ public class EventRepository {
     public Optional<Event> find(long id) {
         return jdbc.query("SELECT id, device, type, value, time FROM events WHERE id = ?", ROW_MAPPER, id)
                 .stream().findFirst();
+    }
+
+    /** Events of these types stored at exactly this time, oldest first, e.g. the alert a notification was about (#184). */
+    public List<Event> at(Instant time, Collection<String> types) {
+        if (types.isEmpty()) return List.of();
+        String marks = String.join(", ", Collections.nCopies(types.size(), "?"));
+        List<Object> args = new ArrayList<>();
+        args.add(time.toString());
+        args.addAll(types);
+        return jdbc.query("SELECT id, device, type, value, time FROM events WHERE time = ? AND type IN (" + marks + ") ORDER BY id",
+                ROW_MAPPER, args.toArray());
     }
 
     /** Removes one event, e.g. the self-check's test event (#124). Returns whether it existed. */

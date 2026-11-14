@@ -43,7 +43,8 @@ class NtfyNotifierTests {
                 .andExpect(content().json("""
                         {"topic":"kudil-alerts","title":"Kudil",
                          "message":"Water leak in the kitchen\\nTurn off the water at the main valve, then dry the floor and find where it comes from.",
-                         "priority":5,"tags":["rotating_light"],"click":"http://kudil:8080",
+                         "priority":5,"tags":["rotating_light"],
+                         "click":"http://kudil:8080/#alert=leak%3Akitchen+leak+sensor&at=2026-11-13T18%3A00%3A00Z",
                          "actions":[{"action":"http","label":"I'm on it","url":"http://kudil:8080/api/alerts/ack",
                                      "method":"POST","headers":{"Content-Type":"application/json"},
                                      "body":"{\\"key\\":\\"leak:kitchen leak sensor\\",\\"who\\":\\"Android phone\\"}",

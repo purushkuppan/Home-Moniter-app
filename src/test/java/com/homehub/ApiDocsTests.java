@@ -27,7 +27,7 @@ class ApiDocsTests {
     static final Set<String> API_PATHS = Set.of(
             "/api/events", "/api/events/latest", "/api/events/stream",
             "/api/controls", "/api/controls/unlock", "/api/controls/{entityId}",
-            "/api/alerts", "/api/alerts/ack", "/api/alerts/test",
+            "/api/alerts", "/api/alerts/ack", "/api/alerts/notified", "/api/alerts/test",
             "/api/devices", "/api/devices/{id}",
             "/api/weather", "/api/sun", "/api/warnings",
             "/api/brief", "/api/version", "/api/status", "/api/selfcheck");
