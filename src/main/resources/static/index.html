@@ -1798,7 +1798,7 @@ function renderNotified() {
     if (card) {
       const show = el('button', 'btn small', 'Show ' + name);
       show.type = 'button';
-      show.onclick = () => card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      show.onclick = () => card.scrollIntoView({ block: 'center' });   // a jump: fine with Reduce Motion (#187)
       actions.append(show);
     }
   }
