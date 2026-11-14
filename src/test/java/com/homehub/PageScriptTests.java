@@ -49,4 +49,13 @@ class PageScriptTests {
         assertThat(page).contains("function setStatus(text, state, clock) {",
                 "if (!paused && stream && stream.readyState === EventSource.OPEN) setStatus('Live', ''");
     }
+
+    /** Reduce Motion (#187, part of #115): no animations, and scrolling jumps instead of gliding. */
+    @Test
+    void reduceMotionStopsEverythingThatMoves() throws Exception {
+        String page = new ClassPathResource("static/index.html").getContentAsString(StandardCharsets.UTF_8);
+        assertThat(page).contains("@media (prefers-reduced-motion: reduce) {",
+                "animation: none !important; transition: none !important;");
+        assertThat(page).as("an explicit smooth scroll ignores the CSS; use scrolling()").doesNotContain("behavior: 'smooth'");
+    }
 }

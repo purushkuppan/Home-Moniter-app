@@ -165,6 +165,10 @@
   .live.paused .dot { background: var(--idle); }
   .live.paused .dot::after { display: none; }
   @keyframes pulse { 0% { transform: scale(.6); opacity: .8; } 100% { transform: scale(1.6); opacity: 0; } }
+  /* Reduce Motion on the phone or computer (issue 187): nothing moves by itself, scrolling jumps straight there */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+  }
   .btn {
     border: 1px solid var(--border); background: var(--surface); color: var(--text);
     border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer;
@@ -1798,7 +1802,7 @@ function renderNotified() {
     if (card) {
       const show = el('button', 'btn small', 'Show ' + name);
       show.type = 'button';
-      show.onclick = () => card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      show.onclick = () => card.scrollIntoView({ behavior: scrolling(), block: 'center' });
       actions.append(show);
     }
   }
@@ -1930,7 +1934,12 @@ const controlCardId = device => 'control-' + device.toLowerCase().replace(/[^a-z
 function openControls(device) {
   showTab('controls');
   const card = document.getElementById(controlCardId(device));
-  if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  if (card) card.scrollIntoView({ behavior: scrolling(), block: 'start' });
+}
+
+/** 'smooth', or 'auto' (a jump) when Reduce Motion is on (#187); an explicit 'smooth' would override the CSS. */
+function scrolling() {
+  return matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
 }
 
 // ---------------------------------------------------------------- home: quick controls
@@ -2345,7 +2354,7 @@ function showTab(name) {
 document.querySelectorAll('#tabs button').forEach(b => b.addEventListener('click', () => { showTab(b.dataset.tab); window.scrollTo(0, 0); }));
 $('seeAll').addEventListener('click', () => {   // the full activity list: its tab on phones, further down on wider screens
   showTab('activity');
-  document.querySelector('.tab-panel[data-tab="activity"]').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  document.querySelector('.tab-panel[data-tab="activity"]').scrollIntoView({ behavior: scrolling(), block: 'start' });
 });
 let savedTab = null;
 try { savedTab = localStorage.getItem(TAB_KEY); } catch (err) { /* ignore */ }
