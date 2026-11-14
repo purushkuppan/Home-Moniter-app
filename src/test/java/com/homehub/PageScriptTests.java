@@ -43,6 +43,17 @@ class PageScriptTests {
                 .isLessThan(page.indexOf("function renderStatus()"));
     }
 
+    /**
+     * Questions anywhere on the page (Hide a device, the test alert) use Kudil's own sheet (#114), which grows with
+     * large text; never the browser's box. ControlFeedbackPageTests checks the controls themselves.
+     */
+    @Test
+    void questionsUseKudilsOwnSheet() throws Exception {
+        String page = new ClassPathResource("static/index.html").getContentAsString(StandardCharsets.UTF_8);
+        assertThat(page).doesNotContain("confirm(");
+        assertThat(page).contains("function ask(title, text, action) {", "return ask(title, text, action);");
+    }
+
     @Test
     void theHeaderSaysLiveOnceTheStreamIsOpen() throws Exception {
         String page = new ClassPathResource("static/index.html").getContentAsString(StandardCharsets.UTF_8);
