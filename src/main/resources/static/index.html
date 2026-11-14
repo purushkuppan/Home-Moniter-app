@@ -1644,8 +1644,9 @@ function deviceRow(d) {
       if (name !== null) chooseDevice(d, 'confirm', name);
     }), button('Hide', () => chooseDevice(d, 'hide')));
   } else if (d.status === 'confirmed') {
-    actions.append(button('Hide', () => {
-      if (confirm('Stop watching ' + d.name + '? It records nothing and sends no alerts while hidden.')) chooseDevice(d, 'hide');
+    actions.append(button('Hide', async () => {
+      if (await ask('Stop watching ' + d.name + '?', 'Kudil records nothing and sends no alerts for it while it is hidden. '
+          + 'You can show it again here.', 'Hide')) chooseDevice(d, 'hide');
     }));
   } else {
     actions.append(button('Show', () => chooseDevice(d, 'show')));
@@ -1823,7 +1824,8 @@ async function acknowledge(a) {
 
 /** Settings → rings every phone with a test critical alert. Needs the PIN: it sounds an alarm on the family's phones. */
 async function sendTestAlert() {
-  if (!confirm('Ring every family phone with a test critical alert now? It sounds even on silent.')) return;
+  if (!await ask('Ring every family phone?', 'Every phone rings with a test critical alert now, even on silent.',
+      'Send test alert')) return;
   if (!await ensureUnlocked()) return;
   try {
     const res = await fetch('/api/alerts/test', { method: 'POST', headers: { [PIN_HEADER]: controlPin } });
@@ -2117,6 +2119,14 @@ function askRisky(c, value) {
     title = c.label + '?';
     text = 'Kudil presses ' + c.label + ' on the ' + device + '. This can\'t be undone.';
   }
+  return ask(title, text, action);
+}
+
+/**
+ * Kudil's own question (#114), instead of the browser's question box: the question, what happens, and a button that
+ * says what it does. Focus starts on Cancel. Resolves true only when the action button is chosen.
+ */
+function ask(title, text, action) {
   $('confirmTitle').textContent = title;
   $('confirmText').textContent = text;
   $('confirmOk').textContent = action;
