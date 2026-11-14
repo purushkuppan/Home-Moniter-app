@@ -22,7 +22,7 @@ import org.springframework.web.client.RestClientResponseException;
  * Sends alerts to phones through Home Assistant's notify actions ({@code homehub.alerts.send-to}), for example
  * {@code notify.mobile_app_phone}, which pushes to the Home Assistant Companion app.
  * <p>
- * Tapping the notification opens {@code homehub.alerts.link} (the dashboard). The "all clear" for a problem carries
+ * Tapping the notification opens {@code homehub.alerts.link} (the dashboard) on that alert (#184). The "all clear" for a problem carries
  * the same tag as the problem, so it replaces the earlier notification on the phone. A failed send is logged and
  * otherwise ignored: the alert is still stored and shown on the dashboard.
  */
@@ -134,9 +134,10 @@ public class AlertNotifier implements Notifier {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("tag", tag(alert.key()));   // same tag = replaces the earlier notification
         data.put("group", "homehub");
-        if (!link.isEmpty()) {
-            data.put("url", link);           // iPhone: opened on tap
-            data.put("clickAction", link);   // Android: opened on tap
+        String opens = alert.link(link);   // the dashboard, showing this alert (#184)
+        if (!opens.isEmpty()) {
+            data.put("url", opens);           // iPhone: opened on tap
+            data.put("clickAction", opens);   // Android: opened on tap
         }
         if (critical) {
             data.put("ttl", 0);                     // Android: delivered at once, even while the phone sleeps

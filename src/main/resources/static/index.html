@@ -279,6 +279,19 @@
   .alert-item .ack { font-size: 12px; font-weight: 400; }
   .alert-item .next-step { font-size: 13px; font-weight: 400; }
   .alert-item .btn { flex-shrink: 0; }
+  .alert-item.is-notified { outline: 2px solid var(--bad); outline-offset: 2px; }   /* the alert a notification opened (issue 184) */
+
+  /* Opened from a phone notification (issue 184): that alert on top of Home */
+  .notified {
+    display: grid; gap: 8px; margin-bottom: 16px; padding: 14px 16px;
+    background: var(--surface); border: 2px solid var(--accent); border-radius: 18px; box-shadow: var(--shadow);
+  }
+  .notified[hidden] { display: none; }
+  .notified-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 12px; }
+  .notified-title { font-size: 17px; font-weight: 600; line-height: 1.3; }
+  .notified-step { font-size: 15px; }
+  .notified-state { font-size: 14px; color: var(--ok); font-weight: 600; }
+  .notified-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 
   /* Quick controls: one tile per appliance action, its state in plain words */
   .quick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; margin-bottom: 24px; }
@@ -599,6 +612,8 @@
   </div>
   <!-- Home: is the house OK? (one status card), then quick controls, appliances and today's events -->
   <div class="tab-panel" data-tab="status">
+  <!-- Opened from a phone notification (#184): what it was about, when, and what to do -->
+  <section class="notified" id="notified" aria-live="polite" aria-label="From your notification" hidden></section>
   <section class="status-card" id="statusCard" aria-live="polite" aria-label="Home status"></section>
   <section class="weather" id="weather" aria-label="Weather" hidden></section>
   <div id="quickSection" hidden>
@@ -829,6 +844,12 @@ const dateClock = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'num
 
 let events = [];    // latest 50 events, for the activity table
 let activeAlerts = [];   // problems going on now (/api/alerts), for the banner and "Offline" cards
+/**
+ * The alert a tapped notification was about (/api/alerts/notified, #184), while it is shown; null otherwise. Still
+ * going on: highlighted in the status card, which has its next step and "I'm on it". News or over: a card on top of
+ * Home. The key alone ({ key, missing: true }) when Kudil can't find it any more.
+ */
+let notified = null;
 let devicesView = [];   // devices from Home Assistant (/api/devices), for the Devices sheet and its chip (#99)
 let current = [];   // last value of every reading, for the status cards
 let lastSeenId = null;
@@ -1161,6 +1182,7 @@ function renderCards() {
     }
     details.append(summary, detail);
     const li = el('li');
+    li.dataset.device = d.name;   // "Show Dryer" on a notification scrolls here (#184)
     li.append(details);
     return li;
   }));
@@ -1236,7 +1258,7 @@ function renderStatus() {
     const list = el('ul', 'alert-list');
     list.append(...activeAlerts.map(a => {
       const since = new Date(a.time);
-      const item = el('li', 'alert-item');
+      const item = el('li', 'alert-item' + (notified && notified.goingOn && a.key === notified.key ? ' is-notified' : ''));
       const when = el('span', 'since', 'since ' + sinceText(since));
       when.title = dayFormat.format(since) + ', ' + clockFormat.format(since);
       // A critical alert (a leak) rings on the phones until someone answers; it can be answered here too.
@@ -1260,6 +1282,7 @@ function renderStatus() {
   box.className = 'status-card ' + tone;
   box.replaceChildren(...children);
   $('homeBadge').hidden = activeAlerts.length === 0;
+  renderNotified();
 }
 
 // ---------------------------------------------------------------- home: today
@@ -1702,6 +1725,86 @@ async function loadAlerts() {
 function renderAlerts(list) {
   activeAlerts = list;
   renderCards();   // also redraws the status card: an offline appliance shows as "Offline"
+}
+
+// ---------------------------------------------------------------- opened from a phone notification (#184)
+
+/** "#alert=finished%3Adryer&at=2026-11-14T18%3A02%3A00Z", the link every notification opens: { key, at }, or null. */
+function notificationFromAddress() {
+  if (!location.hash.startsWith('#alert=')) return null;
+  const params = new URLSearchParams(location.hash.slice(1));
+  const key = params.get('alert');
+  return key ? { key, at: params.get('at') } : null;
+}
+
+/** Opened from a notification: Home, showing that alert. */
+async function showNotified() {
+  const from = notificationFromAddress();
+  if (!from) return;
+  // Drop it from the address: a reload then shows Home as usual, and tapping the same notification again still works.
+  try { history.replaceState(null, '', location.pathname + location.search); } catch (err) { /* ignore */ }
+  document.querySelectorAll('dialog[open]').forEach(d => d.close());
+  showTab('status');
+  window.scrollTo(0, 0);
+  const query = new URLSearchParams({ key: from.key });
+  if (from.at) query.set('at', from.at);
+  let found = null, offline = false;
+  try {
+    const res = await fetch('/api/alerts/notified?' + query, { cache: 'no-store' });
+    if (res.ok) found = await res.json();
+  } catch (err) {
+    offline = true;
+  }
+  notified = found || { key: from.key, missing: true, offline };
+  if (found && !found.goingOn) openAppliances.add(splitDevice(found.device || '').main);   // e.g. the dryer, opened
+  if (found && found.goingOn) loadAlerts();   // the status card highlights it, with the latest "On it"
+  renderCards();   // redraws the status card, and the card on top
+}
+
+function renderNotified() {
+  const box = $('notified');
+  if (!notified || notified.goingOn) {
+    box.hidden = true;
+    box.replaceChildren();
+    return;
+  }
+  const done = el('button', 'link-btn', 'Done');
+  done.type = 'button';
+  done.onclick = () => { notified = null; renderCards(); };
+  const head = el('div', 'notified-head');
+  const children = [head];
+  const actions = el('div', 'notified-actions');
+  if (notified.missing) {
+    head.append(el('span', '', 'From your notification'), done);
+    children.push(notified.offline
+      ? el('div', 'notified-title', 'Couldn\'t load this alert. Kudil can\'t reach home right now.')
+      : el('div', 'notified-title', 'Kudil can\'t find this alert any more.'),
+      el('div', 'notified-step', 'Recent activity shows everything that happened.'));
+    const all = el('button', 'btn small', 'See activity');
+    all.type = 'button';
+    all.onclick = () => $('seeAll').click();
+    actions.append(all);
+  } else {
+    const time = new Date(notified.time);
+    const when = el('span', '', 'From your notification · ' + whenText(time));
+    when.title = dayFormat.format(time) + ', ' + clockFormat.format(time);
+    head.append(when, done);
+    children.push(el('div', 'notified-title', keepTogether(convertTemps(notified.message || ''))));
+    if (notified.nextStep) children.push(el('div', 'notified-step', notified.nextStep));   // what to do (#161)
+    else if (notified.level === 'PROBLEM') children.push(el('div', 'notified-state', 'This is over now. Nothing to do.'));
+    else if (notified.level === 'CLEARED') children.push(el('div', 'notified-state', 'Nothing to do.'));
+    const name = splitDevice(notified.device || '').main;
+    const card = [...$('cards').children].find(li => li.dataset.device === name);
+    if (card) {
+      const show = el('button', 'btn small', 'Show ' + name);
+      show.type = 'button';
+      show.onclick = () => card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      actions.append(show);
+    }
+  }
+  if (actions.childElementCount) children.push(actions);
+  box.replaceChildren(...children);
+  box.hidden = false;
 }
 
 /** "I'm on it" for a critical alert: the phones stop ringing. No PIN: it doesn't change any device. */
@@ -2344,6 +2447,8 @@ $('devicesClose').addEventListener('click', () => $('devicesDialog').close());
 if (location.hash === '#devices') openDevices();   // a bookmark straight to Devices
 if (location.hash === '#brief') openBrief();       // a bookmark straight to the daily brief
 if (location.hash === '#settings') $('settingsBtn').click();   // a bookmark straight to Settings
+showNotified();   // opened from a phone notification: Home, showing that alert (#184)
+window.addEventListener('hashchange', showNotified);   // a notification tapped while Kudil is already open
 $('settings').addEventListener('click', e => {   // a tap outside the sheet closes it
   const r = $('settings').getBoundingClientRect();
   if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) $('settings').close();

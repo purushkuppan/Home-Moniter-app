@@ -7,7 +7,7 @@ package com.homehub.alerts;
  * <p>
  * Every alert carries what a notifier needs: severity ({@link Alert#level()} plus whether it is critical), a tag (the
  * alert key, so an all clear can replace the problem), a title ("Kudil"), the body (message and next step, #161) and
- * a link (the dashboard).
+ * a link ({@link Alert#link}: the dashboard, opened on that alert, #184).
  */
 public interface Notifier {
 

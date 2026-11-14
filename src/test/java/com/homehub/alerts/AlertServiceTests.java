@@ -8,8 +8,11 @@ import com.homehub.events.EventRepository;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
+import java.net.URLEncoder;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalTime;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -85,6 +88,48 @@ class AlertServiceTests {
                 HttpResponse.BodyHandlers.ofString()).body();
     }
 
+    private HttpResponse<String> notified(String key, String at) throws Exception {
+        String query = "key=" + URLEncoder.encode(key, StandardCharsets.UTF_8)
+                + (at == null ? "" : "&at=" + URLEncoder.encode(at, StandardCharsets.UTF_8));
+        return HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/alerts/notified?" + query)).build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
+    /** Tapping "Dryer finished" on a phone opens Kudil on that alert, with what to do (#184). */
+    @Test
+    void aTappedNotificationShowsWhatItWasAboutAndWhatToDo() throws Exception {
+        Instant at = Instant.parse("2026-11-14T18:02:00.123456Z");
+        repository.save(new Event(null, "Washer", "notice", "Washer finished", at));   // the same moment, another alert
+        repository.save(new Event(null, "Dryer", "notice", "Dryer finished", at));
+
+        HttpResponse<String> dryer = notified("finished:dryer", at.toString());
+
+        assertThat(dryer.statusCode()).isEqualTo(200);
+        assertThat(dryer.body()).contains("\"key\":\"finished:dryer\"", "\"level\":\"NOTICE\"", "\"device\":\"Dryer\"",
+                "\"message\":\"Dryer finished\"", "\"nextStep\":\"Take the clothes out soon, so they don't wrinkle.\"",
+                "\"goingOn\":false");
+    }
+
+    @Test
+    void aProblemThatIsOverHasNothingLeftToDo() throws Exception {
+        Instant at = Instant.parse("2026-11-14T07:30:00Z");
+        repository.save(new Event(null, "Refrigerator/Fridge", "alert", "Fridge door has been open for 1 minute", at));
+
+        HttpResponse<String> door = notified("door:refrigerator/fridge", at.toString());
+
+        assertThat(door.statusCode()).isEqualTo(200);
+        assertThat(door.body()).contains("\"level\":\"PROBLEM\"", "\"message\":\"Fridge door has been open for 1 minute\"",
+                "\"nextStep\":null", "\"goingOn\":false");
+    }
+
+    @Test
+    void anAlertKudilDoesNotHaveIsNotFound() throws Exception {
+        assertThat(notified("finished:dryer", "2026-11-14T18:02:00Z").statusCode()).as("nothing stored then").isEqualTo(404);
+        assertThat(notified("finished:dryer", "yesterday").statusCode()).as("not a time").isEqualTo(404);
+        assertThat(notified("finished:dryer", null).statusCode()).as("no time, not going on").isEqualTo(404);
+    }
+
     @Test
     void criticalAlertDefaults() {
         assertThat(critical.kinds()).containsExactly("leak", "smoke", "co", "severe");
@@ -106,6 +151,10 @@ class AlertServiceTests {
         assertThat(active).contains("\"key\":\"leak:kitchen leak sensor\"", "\"critical\":true", "\"acknowledgedBy\":null");
         assertThat(active).as("what to do next (#161)")
                 .contains("\"nextStep\":\"Turn off the water at the main valve, then dry the floor and find where it comes from.\"");
+        HttpResponse<String> tapped = notified("leak:kitchen leak sensor", "2000-01-01T00:00:00Z");
+        assertThat(tapped.statusCode()).isEqualTo(200);
+        assertThat(tapped.body()).as("a tapped notification for a leak that is still there (#184)")
+                .contains("\"goingOn\":true", "\"message\":\"Water leak in the kitchen\"", "\"nextStep\":\"Turn off the water");
 
         // The ntfy "I'm on it" button (#154) says who answered.
         HttpResponse<String> answer = post("/api/alerts/ack",
