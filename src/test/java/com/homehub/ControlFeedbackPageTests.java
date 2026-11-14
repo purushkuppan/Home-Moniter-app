@@ -106,7 +106,7 @@ class ControlFeedbackPageTests {
     void aChangeShowsSendingThenDoneOnlyWhenTheDeviceReportsIt() throws Exception {
         String code = controlsCode(page());
         // Sending…: the control is disabled, so nothing is sent twice.
-        assertThat(code).contains("setStatus(c, { state: 'sending', value });",
+        assertThat(code).contains("setControlStatus(c, { state: 'sending', value });",
                 "const disabled = !controlsView.enabled || sending;", "busy ? 'Sending…' : text",
                 "action.disabled = sending || !controlsView.enabled");
         // Then Kudil asks every 1.5 s for up to 15 s until the device itself reports the new value.
@@ -119,7 +119,7 @@ class ControlFeedbackPageTests {
                 "\"Didn't respond. Try again.\"", "'Didn\\'t work. ' + reason");
         // A wrong PIN or too many tries locks the controls again, as before.
         assertThat(code).contains("if (res.status === 401 || res.status === 429 || res.status === 403) {\n"
-                + "    setStatus(c, null);\n    lockControls();");
+                + "    setControlStatus(c, null);\n    lockControls();");
         // The old "refresh after 1.5 s and hope" is gone.
         assertThat(code).doesNotContain("setTimeout(loadControls, 1500)");
     }

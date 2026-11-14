@@ -2028,7 +2028,7 @@ function askRisky(c, value) {
  * Done with the time, or "Didn't respond" after 15 s. The new state never shows before the device confirms it.
  */
 async function sendCommand(c, value, undoTo = null) {
-  setStatus(c, { state: 'sending', value });
+  setControlStatus(c, { state: 'sending', value });
   let res, body;
   try {
     res = await fetch('/api/controls/' + encodeURIComponent(c.id), {
@@ -2041,7 +2041,7 @@ async function sendCommand(c, value, undoTo = null) {
     return failed(c, 'Kudil is not reachable.');
   }
   if (res.status === 401 || res.status === 429 || res.status === 403) {
-    setStatus(c, null);
+    setControlStatus(c, null);
     lockControls();
     return toast(body.message || 'That didn\'t work (HTTP ' + res.status + ').', true);
   }
@@ -2052,7 +2052,7 @@ async function sendCommand(c, value, undoTo = null) {
     loadControls();   // show what the device does report
     return failed(c, null);
   }
-  setStatus(c, { state: 'done', value, text: 'Done · ' + stateText(c, value) + ' · ' + shortClock.format(new Date()) });
+  setControlStatus(c, { state: 'done', value, text: 'Done · ' + stateText(c, value) + ' · ' + shortClock.format(new Date()) });
   const message = body.message ? convertTemps(body.message) : 'Done.';
   if (undoTo === null) toast(message);
   else toast(message, false, { label: 'Undo', ms: UNDO_MS, run: () => undoChange(c, undoTo) });
@@ -2088,17 +2088,17 @@ async function undoChange(c, value) {
 }
 
 function failed(c, reason) {
-  setStatus(c, { state: 'failed', text: reason ? 'Didn\'t work. ' + reason : "Didn't respond. Try again." });
+  setControlStatus(c, { state: 'failed', text: reason ? 'Didn\'t work. ' + reason : "Didn't respond. Try again." });
   toast(reason || c.device + " didn't respond. Try again.", true);
 }
 
 /** Remembers what is happening to a control (kept across refreshes) and shows it; Done and errors fade after a while. */
-function setStatus(c, status) {
+function setControlStatus(c, status) {
   const old = controlStatus.get(c.id);
   if (old) clearTimeout(old.timer);
   if (status) controlStatus.set(c.id, status);
   else controlStatus.delete(c.id);
-  if (status && status.state !== 'sending') status.timer = setTimeout(() => setStatus(c, null), STATUS_MS);
+  if (status && status.state !== 'sending') status.timer = setTimeout(() => setControlStatus(c, null), STATUS_MS);
   renderControls();
 }
 
